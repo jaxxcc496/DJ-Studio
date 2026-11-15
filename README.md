@@ -1,40 +1,48 @@
 # DJ-Studio
 
-A free, customizable Windows DJ software project. The current release focuses on the performance-screen design and library workflow.
+DJ-Studio is an independent DJ application project aiming for a VirtualDJ-style workflow. It is not affiliated with or powered by VirtualDJ.
 
-## Included in this build
+## Current implementation
 
-- Redesigned two-deck layout with round jogwheel visuals
-- Large waveform-style display areas (currently visual mockups, not audio analysis)
-- Deck load controls, cue, play/stop, pitch, sync, loop and hot-cue interface controls
-- Mixer layout with gain, EQ and crossfader sliders (visual controls only)
-- Eight sampler pads (interface only)
-- Music library: add local audio files and search by filename
-- Playlists: create, rename, delete, and add/remove tracks
-- Library and playlist data saved locally on the computer
-- Four themes: Midnight, VirtualDJ Grey, Rekordbox Blue, and Purple
+- Two-deck desktop interface
+- Local audio library and playlists
+- Audio output through a Python audio callback engine
+- Deck playback, pause, stop and seeking
+- Basic speed change (this changes playback pitch too; key-lock time-stretch is not implemented)
+- Basic three-band EQ, deck gain and crossfader
+- Basic BPM analysis, pitch-ratio sync, hot cues and beat-length loops
+- Waveform display and jogwheel-style seeking interface
+- Theme selection
 
-## Not connected yet
+## Important limitations
 
-Audio playback, real-time waveform analysis, jogwheel scratching, cue/loop playback, MIDI/controller support, effects processing, and sampler audio are not implemented yet. The controls and jogwheels in this build are interface elements, not functioning audio controls. These need a separate audio-engine development stage.
+This is an early development build, not a finished professional DJ system. The following are not yet implemented or not yet at VirtualDJ quality:
 
-## Run
+- Proper scratch/jogwheel vinyl emulation and low-latency response
+- Beat-grid and phase-aligned sync
+- High-quality key-lock time-stretch
+- Persistent-state EQ filters and professionally tuned audio processing
+- Working sample-bank playback and sample editor
+- Built-in effects rack and VST hosting
+- MIDI/controller mapping and audio routing configuration
+- Reliable automated performance tests on Windows hardware
 
-Install Python 3.10 or newer and run:
+The interface may show controls for features that are still being developed. Do not rely on this build for a live performance.
 
-    python app/main.py
+## Run from source
 
-The app currently uses Python's standard library (Tkinter).
+Install Python 3.10 or newer, install the packages in `requirements.txt`, then run:
+
+```bash
+python app/main.py
+```
+
+An audio output device is required. Supported file formats depend on the installed audio libraries and codecs.
 
 ## Windows build
 
 A push to the `main` branch starts the GitHub Actions workflow. Open **Actions**, select the latest successful **Build Windows app** run, and download its `DJ-Studio-Windows` artifact.
 
-## Next development stages
+## Development direction
 
-1. Complete and refine the interface and save layout preferences
-2. Add the audio engine and real two-deck playback
-3. Connect jogwheel movement, seeking, scratch behavior, cue points and loops
-4. Add beat analysis and genuine scrolling waveforms
-
-MIDI and VST/plugin support are not part of the current requested stage.
+The goal is to develop and test the core audio engine first, then connect each visible control to real functionality. Feature parity with a mature product such as VirtualDJ requires substantial implementation and testing; it cannot be guaranteed by copying its appearance.
