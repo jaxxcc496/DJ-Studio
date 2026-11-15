@@ -8,6 +8,7 @@ os.makedirs(APP_DIR, exist_ok=True)
 DATA_FILE = os.path.join(APP_DIR, "library.json")
 
 THEMES = {
+ "VirtualDJ Black": {"bg":"#080a0e","panel":"#11151c","panel2":"#202733","line":"#303b49","fg":"#f2f5fa","muted":"#9aa8b8","accent":"#36a9ff","hot":"#ff4d70"},
  "Midnight": {"bg":"#0b1018","panel":"#151e2b","panel2":"#202d3d","line":"#2d3c50","fg":"#edf4ff","muted":"#91a4bb","accent":"#25d6c5","hot":"#ff5378"},
  "VirtualDJ Grey": {"bg":"#17191e","panel":"#242932","panel2":"#343c49","line":"#465160","fg":"#f4f6f9","muted":"#aeb8c5","accent":"#ff9e36","hot":"#ff5378"},
  "Rekordbox Blue": {"bg":"#081525","panel":"#11243a","panel2":"#1b3552","line":"#294866","fg":"#eef7ff","muted":"#9bb7d2","accent":"#39aaff","hot":"#ff5378"},
@@ -20,7 +21,8 @@ class DJStudio(tk.Tk):
   self.title("DJ Studio")
   self.geometry("1440x900")
   self.minsize(1120,740)
-  self.theme_name=tk.StringVar(value="Midnight")
+  self.theme_name=tk.StringVar(value="VirtualDJ Black")
+  self.queue=[]
   self.tracks=[]; self.playlists={"All Tracks":[]}; self.current_playlist="All Tracks"
   self.deck_tracks={"A":None,"B":None}; self.cue_points={"A":[],"B":[]}
   self.deck_sounds={"A":None,"B":None}; self.deck_channels={"A":None,"B":None}
@@ -42,13 +44,14 @@ class DJStudio(tk.Tk):
   try:
    with open(DATA_FILE,"r",encoding="utf-8") as f:
     d=json.load(f); self.tracks=d.get("tracks",[]); self.playlists=d.get("playlists",{"All Tracks":[]})
+    self.theme_name.set(d.get("theme","VirtualDJ Black"))
     if "All Tracks" not in self.playlists: self.playlists["All Tracks"]=list(self.tracks)
    self.current_playlist="All Tracks"
   except Exception: pass
 
  def save_data(self):
   try:
-   with open(DATA_FILE,"w",encoding="utf-8") as f: json.dump({"tracks":self.tracks,"playlists":self.playlists},f,indent=2)
+   with open(DATA_FILE,"w",encoding="utf-8") as f: json.dump({"tracks":self.tracks,"playlists":self.playlists,"theme":self.theme_name.get()},f,indent=2)
    self.set_status("Library and playlists saved on this computer")
   except Exception as e: self.set_status("Could not save library: "+str(e))
 
@@ -67,6 +70,7 @@ class DJStudio(tk.Tk):
   self.theme_var=self.theme_name
   self.theme_box=ttk.Combobox(self.top,textvariable=self.theme_var,values=list(THEMES),state="readonly",width=17); self.theme_box.pack(side="right",padx=5)
   self.theme_box.bind("<<ComboboxSelected>>",lambda e:self.apply_theme())
+  self.settings_btn=self.button(self.top,"SETTINGS",self.open_settings); self.settings_btn.pack(side="right",padx=(8,2))
   self.theme_label=self.label(self.top,text="THEME",font=("Segoe UI",8,"bold")); self.theme_label.pack(side="right",padx=6)
 
   self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,9))
@@ -82,6 +86,11 @@ class DJStudio(tk.Tk):
   self.button(self.sidebar,"RENAME",self.rename_playlist).pack(fill="x",pady=3)
   self.button(self.sidebar,"DELETE",self.delete_playlist).pack(fill="x",pady=3)
   self.button(self.sidebar,"SAVE LIBRARY",self.save_data).pack(fill="x",pady=(12,3))
+  self.label(self.sidebar,"UP NEXT",font=("Segoe UI",10,"bold")).pack(anchor="w",pady=(18,6))
+  self.queue_box=tk.Listbox(self.sidebar,bd=0,highlightthickness=0,activestyle="none",font=("Segoe UI",9),height=7,exportselection=False)
+  self.queue_box.pack(fill="both",expand=False)
+  self.button(self.sidebar,"PLAY NEXT",self.play_next).pack(fill="x",pady=(6,3))
+  self.button(self.sidebar,"CLEAR QUEUE",self.clear_queue).pack(fill="x",pady=3)
 
   self.library_panel=self.frame(self.middle,padx=12,pady=10); self.library_panel.pack(side="left",fill="both",expand=True)
   libhead=self.frame(self.library_panel); libhead.pack(fill="x")
@@ -97,6 +106,7 @@ class DJStudio(tk.Tk):
   actionrow=self.frame(self.library_panel); actionrow.pack(fill="x",pady=(8,0))
   self.button(actionrow,"LOAD → DECK A",lambda:self.load_to("A")).pack(side="left",padx=(0,5))
   self.button(actionrow,"LOAD → DECK B",lambda:self.load_to("B")).pack(side="left",padx=5)
+  self.button(actionrow,"＋ QUEUE",self.add_to_queue).pack(side="left",padx=5)
   self.button(actionrow,"＋ PLAYLIST",self.add_to_playlist).pack(side="left",padx=5)
   self.button(actionrow,"REMOVE",self.remove_track).pack(side="left",padx=5)
 
@@ -117,7 +127,7 @@ class DJStudio(tk.Tk):
   for i in range(4): pads.columnconfigure(i,weight=1)
   for i in range(2): pads.rowconfigure(i,weight=1)
   self.statusbar=tk.Label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7,bd=0); self.statusbar.pack(fill="x",pady=(8,0))
-  self.refresh_playlists(); self.refresh_tracks()
+  self.refresh_playlists(); self.refresh_tracks(); self.refresh_queue()
 
  def build_deck(self,parent,key):
   p=self.frame(parent,padx=12,pady=10); p.pack(side="left",fill="both",expand=True,padx=4)
@@ -167,6 +177,47 @@ class DJStudio(tk.Tk):
   cv.create_oval(35,35,81,81,fill=c["panel2"],outline=c["accent"],width=2)
   cv.create_text(58,58,text=key,fill=c["fg"],font=("Segoe UI",14,"bold"))
   cv.create_text(58,94,text="JOG",fill=c["muted"],font=("Segoe UI",7,"bold"))
+
+ def refresh_queue(self):
+  if not hasattr(self,"queue_box"): return
+  self.queue_box.delete(0,"end")
+  for path in self.queue: self.queue_box.insert("end",os.path.basename(path))
+
+ def add_to_queue(self):
+  path=self.selected()
+  if not path:
+   self.set_status("Select a track in the library first"); return
+  self.queue.append(path); self.refresh_queue()
+  self.set_status(os.path.basename(path)+" added to queue")
+
+ def clear_queue(self):
+  self.queue.clear(); self.refresh_queue(); self.set_status("Queue cleared")
+
+ def play_next(self):
+  if not self.queue:
+   self.set_status("Queue is empty"); return
+  path=self.queue.pop(0); self.refresh_queue()
+  self.deck_tracks["A"]=path
+  self.deck_ui["A"]["title"].configure(text=os.path.basename(path))
+  self.deck_ui["A"]["time"].configure(text="00:00.0")
+  try:
+   self.deck_sounds["A"]=pygame.mixer.Sound(path)
+  except Exception as e:
+   self.deck_sounds["A"]=None; self.set_status("Cannot load queued track: "+str(e)); return
+  self.draw_wave("A"); self.play_deck("A")
+
+ def open_settings(self):
+  win=tk.Toplevel(self); win.title("DJ Studio Settings"); win.geometry("440x300"); win.resizable(False,False)
+  c=THEMES[self.theme_name.get()]; win.configure(bg=c["bg"])
+  tk.Label(win,text="SETTINGS",bg=c["bg"],fg=c["fg"],font=("Segoe UI",18,"bold")).pack(anchor="w",padx=22,pady=(20,4))
+  tk.Label(win,text="Appearance and library",bg=c["bg"],fg=c["muted"],font=("Segoe UI",9)).pack(anchor="w",padx=22)
+  body=tk.Frame(win,bg=c["panel"],padx=18,pady=18); body.pack(fill="both",expand=True,padx=18,pady=18)
+  tk.Label(body,text="INTERFACE THEME",bg=c["panel"],fg=c["fg"],font=("Segoe UI",9,"bold")).pack(anchor="w")
+  choice=tk.StringVar(value=self.theme_name.get())
+  combo=ttk.Combobox(body,textvariable=choice,values=list(THEMES),state="readonly"); combo.pack(fill="x",pady=(8,16))
+  def apply():
+   self.theme_name.set(choice.get()); self.theme_box.set(choice.get()); self.apply_theme(); self.save_data(); win.destroy()
+  tk.Button(body,text="APPLY AND SAVE",command=apply,bg=c["accent"],fg="#06111c",relief="flat",font=("Segoe UI",9,"bold"),padx=12,pady=9).pack(anchor="e")
 
  def add_music(self):
   paths=filedialog.askopenfilenames(title="Add music",filetypes=[("Audio files","*.mp3 *.wav *.flac *.aiff *.aif *.ogg *.m4a"),("All files","*.*")])
