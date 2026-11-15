@@ -1,36 +1,38 @@
 # DJ-Studio
 
-Free, customizable DJ software for Windows. This repository is the start of the project.
+Free, customizable DJ software for Windows. This project is under active development.
 
-## Current prototype
+## Current version
 
-- Desktop window built with Python and Tkinter
-- Two-deck interface mock-up
-- Three selectable visual themes: Dark, VirtualDJ Grey, and Rekordbox Blue
-- Initial Windows build workflow using GitHub Actions
+- Two-deck performance layout
+- Add local audio files to the library
+- Search the library by filename
+- Create, rename, and delete playlists
+- Add tracks to playlists and remove tracks from the current view
+- Load a selected library track into Deck A or Deck B
+- Four selectable interface themes
+- Windows build workflow using GitHub Actions
 
-**Important:** This is an early interface prototype. The deck buttons are placeholders; audio playback, mixing, MIDI controllers, effects, and library management are not implemented yet.
+**Not implemented yet:** actual audio playback, scratching, beat detection, MIDI/controller support, mixer processing, effects, sampler, and recording. The deck controls are currently interface placeholders and do not play sound yet.
 
 ## Run locally
 
-Install Python 3.10 or newer, then run:
+Install Python 3.10 or newer and run:
 
-```bash
-python app/main.py
-```
+    python app/main.py
 
-Tkinter is included with most standard Windows Python installations.
+The app uses Python's standard library (Tkinter).
 
 ## Build for Windows
 
-Open the repository's **Actions** tab. Run **Build Windows app** with **Run workflow**, or push a commit to `main`. Download the `DJ-Studio-Windows` artifact from the completed workflow.
+Open the repository's **Actions** tab and choose **Build Windows app**. A push to the main branch also starts a build. When it finishes, download the **DJ-Studio-Windows** artifact from the workflow run.
 
-## Planned development
+## Roadmap
 
-1. Customizable interface and saved layouts
-2. Audio engine and playable decks
-3. MIDI device detection and mapping
-4. Mixer, effects, sampler, and music library
-5. Recording, plugins, and phone companion features
+1. Improve the interface and save user preferences
+2. Add a real audio engine and playable decks
+3. Add cue points, loops, pitch, waveform analysis, and beat matching
+4. Add MIDI device detection and customizable mappings
+5. Add mixer, effects, sampler, recording, and plugin support
 
-The goal is broad controller support, but compatibility will depend on each device's MIDI/HID protocol and available drivers.
+Controller compatibility will depend on each device's MIDI/HID protocol and available drivers.
