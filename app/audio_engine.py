@@ -149,7 +149,7 @@ class AudioEngine:
                 n = len(audio)
                 step = d["pitch"] * (self.sample_rate / self.sample_rate)
                 pos = d["position"]
-                idx = pos + step * np.arange(frames, dtype=np.float64)
+                idx = pos * self.sample_rate + step * np.arange(frames, dtype=np.float64)
                 if d["loop"] is not None:
                     a, b = d["loop"]
                     length = max(1.0, (b-a) * self.sample_rate)
@@ -167,10 +167,10 @@ class AudioEngine:
                 fade = self.crossfade
                 level = d["gain"] * ((1.0-max(0.0, fade)) if key == "A" else (1.0+min(0.0, fade)))
                 outdata += block * level
-                d["position"] = float(pos + frames * step)
+                d["position"] = float(pos + frames * step / self.sample_rate)
                 if d["loop"] is not None and d["position"] >= d["loop"][1]:
                     d["position"] = d["loop"][0] + (d["position"]-d["loop"][0]) % (d["loop"][1]-d["loop"][0])
-                elif d["position"] >= n:
+                elif d["position"] >= n / self.sample_rate:
                     d["position"] = n / self.sample_rate
                     d["playing"] = False
         np.clip(outdata, -1.0, 1.0, out=outdata)
