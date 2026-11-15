@@ -194,6 +194,13 @@ class DJStudio(tk.Tk):
   row2=self.frame(right); row2.pack(fill="x",pady=4)
   for t in ("− PITCH","＋ PITCH","SYNC"):
    self.button(row2,t,lambda x=t,k=key:self.adjust_pitch(k,-0.5 if x=="− PITCH" else 0.5) if x!="SYNC" else self.sync_deck(k)).pack(side="left",padx=2)
+  self.fx_buttons=self.fx_buttons if hasattr(self,"fx_buttons") else {}
+  fxrow=self.frame(right); fxrow.pack(anchor="w",pady=2)
+  self.fx_buttons[key]={}
+  for effect in ("filter","echo"):
+   btn=self.button(fxrow,effect.upper()+" OFF",lambda k=key,x=effect:self.toggle_effect(k,x))
+   btn.pack(side="left",padx=2)
+   self.fx_buttons[key][effect]=btn
   self.button(row2,"− LOOP",lambda k=key:self.change_loop_beats(k,-1)).pack(side="left",padx=2)
   self.loop_labels=self.loop_labels if hasattr(self,"loop_labels") else {}
   loop_label=self.label(row2,"4 BEATS",font=("Segoe UI",8,"bold")); loop_label.pack(side="left",padx=3)
@@ -493,6 +500,13 @@ class DJStudio(tk.Tk):
  def set_crossfade(self,value):
   self.crossfade=max(-1.0,min(1.0,float(value)/100.0));self.audio_engine.set_crossfade(self.crossfade)
   self.set_status("Crossfader: "+str(int(float(value))))
+
+ def toggle_effect(self,key,effect):
+  enabled=not self.audio_engine.effects[key][effect]
+  self.audio_engine.set_effect(key,effect,enabled)
+  if hasattr(self,"fx_buttons") and key in self.fx_buttons:
+   self.fx_buttons[key][effect].configure(text=effect.upper()+(" ON" if enabled else " OFF"))
+  self.set_status("Deck "+key+" "+effect+" "+("enabled" if enabled else "disabled"))
 
  def jog_start(self,key,event):
   if not self.deck_tracks.get(key):
