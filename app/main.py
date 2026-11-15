@@ -30,6 +30,8 @@ class DJStudio(tk.Tk):
   self.deck_cues={"A":{},"B":{}}; self.deck_play_offset={"A":0.0,"B":0.0}
   self.deck_loop_sound={"A":None,"B":None}; self.deck_loop_active={"A":False,"B":False}
   self.deck_playing_sound={"A":None,"B":None}
+  self.deck_gain={"A":1.0,"B":1.0}; self.crossfade=0.0
+  self.jog_drag={"A":None,"B":None}
   self.analysis_cache={}; self.deck_waveforms={"A":[],"B":[]}; self.deck_bpms={"A":None,"B":None}
   self.audio_ready=False
   try:
@@ -117,12 +119,19 @@ class DJStudio(tk.Tk):
 
   self.bottom=self.frame(self); self.bottom.pack(fill="x",pady=(9,0))
   self.mixer_panel=self.frame(self.bottom,padx=12,pady=9); self.mixer_panel.pack(side="left",fill="both",expand=True,padx=(0,7))
-  self.label(self.mixer_panel,"MIXER  •  LAYOUT PREVIEW",font=("Segoe UI",10,"bold")).pack(anchor="w")
+  self.label(self.mixer_panel,"MIXER  •  AUDIO LEVELS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   controls=self.frame(self.mixer_panel); controls.pack(fill="x",pady=(5,0))
   for name in ("GAIN A","LOW A","MID A","HIGH A","CROSSFADER","HIGH B","MID B","LOW B","GAIN B"):
    col=self.frame(controls); col.pack(side="left",expand=True,fill="x",padx=3)
    self.label(col,name,font=("Segoe UI",7,"bold")).pack()
-   sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_status(n+" visual control changed")); sc.set(50); sc.pack()
+   if name=="GAIN A":
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(0); sc.pack()
+   elif name=="GAIN B":
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="B":self.set_deck_gain(k,v)); sc.set(0); sc.pack()
+   elif name=="CROSSFADER":
+    sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=100,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(0); sc.pack()
+   else:
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_status(n+" EQ is not active yet")); sc.set(50); sc.pack()
   self.sampler_panel=self.frame(self.bottom,width=290,padx=10,pady=9); self.sampler_panel.pack(side="right",fill="y"); self.sampler_panel.pack_propagate(False)
   self.label(self.sampler_panel,"SAMPLE PADS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   pads=self.frame(self.sampler_panel); pads.pack(fill="both",expand=True,pady=5)
@@ -146,8 +155,9 @@ class DJStudio(tk.Tk):
   wave=tk.Canvas(p,height=64,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
   row=self.frame(p); row.pack(fill="x")
   jog=tk.Canvas(row,width=116,height=116,bd=0,highlightthickness=0); jog.pack(side="left",padx=(0,12))
-  jog.bind("<Button-1>",lambda e,k=key:self.set_status("Deck "+k+" jogwheel selected — scratch engine not connected"))
-  jog.bind("<B1-Motion>",lambda e,k=key:self.set_status("Deck "+k+" jogwheel movement detected — scratch engine is a later audio task"))
+  jog.bind("<Button-1>",lambda e,k=key:self.jog_start(k,e))
+  jog.bind("<B1-Motion>",lambda e,k=key:self.jog_move(k,e))
+  jog.bind("<ButtonRelease-1>",lambda e,k=key:self.jog_end(k,e))
   right=self.frame(row); right.pack(side="left",fill="both",expand=True)
   btns=self.frame(right); btns.pack(anchor="w",pady=2)
   self.button(btns,"LOAD",lambda k=key:self.load_to(k)).pack(side="left",padx=2)
@@ -378,6 +388,61 @@ class DJStudio(tk.Tk):
    return
   self.play_deck(key)
 
+ def apply_deck_mix(self,key):
+  channel=self.deck_channels.get(key) if self.audio_ready else None
+  if not channel: return
+  gain=max(0.0,min(1.0,self.deck_gain.get(key,1.0)))
+  fade=self.crossfade
+  if key=="A": level=gain*(1.0-max(0.0,fade))
+  else: level=gain*(1.0+min(0.0,fade))
+  channel.set_volume(max(0.0,min(1.0,level)))
+
+ def set_deck_gain(self,key,value):
+  self.deck_gain[key]=max(0.0,min(1.0,float(value)/100.0))
+  self.apply_deck_mix(key)
+  self.set_status("Deck "+key+" gain: "+str(int(float(value)))+"%")
+
+ def set_crossfade(self,value):
+  self.crossfade=max(-1.0,min(1.0,float(value)/100.0))
+  self.apply_deck_mix("A"); self.apply_deck_mix("B")
+  self.set_status("Crossfader: "+str(int(float(value))))
+
+ def jog_start(self,key,event):
+  if not self.deck_tracks.get(key):
+   self.set_status("Load a track into Deck "+key+" before using the jogwheel"); return
+  self.jog_drag[key]={"x":event.x,"position":self.current_position(key),"was_playing":bool(self.deck_started.get(key) is not None)}
+  self.set_status("Deck "+key+" jog: drag left or right to seek")
+
+ def jog_move(self,key,event):
+  state=self.jog_drag.get(key)
+  if not state: return
+  delta=event.x-state["x"]
+  duration=self.deck_duration.get(key,0.0)
+  target=max(0.0,min(max(0.0,duration-0.08),state["position"]+delta*0.025))
+  self.deck_play_offset[key]=target
+  self.deck_started[key]=None
+  self.deck_channels[key].stop()
+  clip=self.make_audio_slice(key,target,min(duration,target+0.12))
+  if clip is not None and self.audio_ready:
+   self.deck_playing_sound[key]=clip
+   self.deck_channels[key].play(clip)
+  self.draw_wave(key)
+
+ def jog_end(self,key,event):
+  state=self.jog_drag.get(key)
+  if not state: return
+  target=self.deck_play_offset.get(key,0.0)
+  self.deck_channels[key].stop()
+  self.deck_started[key]=None
+  self.deck_loop_active[key]=False; self.deck_loop_sound[key]=None
+  if state["was_playing"]:
+   self.play_from_position(key,target)
+  else:
+   self.deck_play_offset[key]=target
+   self.draw_wave(key)
+  self.jog_drag[key]=None
+  self.set_status("Deck "+key+" jog seek: "+self.format_time(target))
+
  def play_deck(self,key):
   if not self.audio_ready:
    self.set_status("Audio device unavailable: "+getattr(self,"audio_error","unknown audio error")); return
@@ -396,6 +461,7 @@ class DJStudio(tk.Tk):
   self.deck_playing_sound[key]=sound
   self.deck_channels[key].play(sound)
   self.deck_play_offset[key]=start
+  self.apply_deck_mix(key)
   self.deck_started[key]=time.monotonic()
   if hasattr(self,"deck_play_button") and key in self.deck_play_button:
    self.deck_play_button[key].configure(text="■ STOP")
