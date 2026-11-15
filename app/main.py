@@ -84,6 +84,8 @@ class DJStudio(tk.Tk):
   self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,9))
   self.deck_ui={}
   for key in ("A","B"): self.build_deck(self.deck_row,key)
+  self.beatmatch_label=self.label(self,"BEATMATCH  •  Load tracks in both decks to compare BPM",font=("Segoe UI",10,"bold"),anchor="center")
+  self.beatmatch_label.pack(fill="x",pady=(0,8))
 
   self.middle=self.frame(self); self.middle.pack(fill="both",expand=True)
   self.sidebar=self.frame(self.middle,width=205,padx=10,pady=10); self.sidebar.pack(side="left",fill="y",padx=(0,8)); self.sidebar.pack_propagate(False)
@@ -187,6 +189,13 @@ class DJStudio(tk.Tk):
   seconds=max(0,int(seconds)); return "%02d:%02d"%(seconds//60,seconds%60)
 
  def update_deck_displays(self):
+  a=self.deck_bpms.get("A"); b=self.deck_bpms.get("B")
+  if hasattr(self,"beatmatch_label"):
+   if a and b:
+    diff=abs(a-b); relation=(min(a,b)/max(a,b))*100.0 if max(a,b)>0 else 0.0
+    self.beatmatch_label.configure(text="BEATMATCH  •  A %.1f BPM   |   B %.1f BPM   |   DIFFERENCE %.1f BPM   |   RATE MATCH %.1f%%"%(a,b,diff,relation))
+   else:
+    self.beatmatch_label.configure(text="BEATMATCH  •  Load and analyse tracks in both decks to compare BPM")
   for key in ("A","B"):
    channel=self.deck_channels.get(key) if self.audio_ready else None
    if channel and channel.get_busy() and self.deck_started[key] is not None:
