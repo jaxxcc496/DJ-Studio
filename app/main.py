@@ -250,19 +250,31 @@ class DJStudio(tk.Tk):
             self.draw_wave(key)
 
     def paint(self, widget, c):
-        try:
-            widget.configure(bg=c["bg"], fg=c["fg"])
-        except tk.TclError:
+        # ttk widgets use ttk.Style; classic Tk options such as bg/fg
+        # are not valid on ttk.Combobox and other themed controls.
+        if not isinstance(widget, ttk.Widget):
             try:
                 widget.configure(bg=c["bg"])
             except tk.TclError:
                 pass
-        if isinstance(widget, tk.Button):
-            widget.configure(bg=c["panel2"], fg=c["fg"], activebackground=c["accent"], activeforeground="#10141d", relief="flat", padx=9, pady=5, cursor="hand2")
-        elif isinstance(widget, tk.Entry):
-            widget.configure(bg=c["panel"], fg=c["fg"], insertbackground=c["fg"], relief="flat")
-        elif isinstance(widget, tk.Listbox):
-            widget.configure(bg=c["panel"], fg=c["fg"], selectbackground=c["accent"], selectforeground="#10141d", relief="flat")
+            if isinstance(widget, (tk.Label, tk.Button, tk.Entry, tk.Listbox)):
+                try:
+                    widget.configure(fg=c["fg"])
+                except tk.TclError:
+                    pass
+            if isinstance(widget, tk.Button):
+                widget.configure(bg=c["panel2"], fg=c["fg"],
+                                 activebackground=c["accent"],
+                                 activeforeground="#10141d",
+                                 relief="flat", padx=9, pady=5,
+                                 cursor="hand2")
+            elif isinstance(widget, tk.Entry):
+                widget.configure(bg=c["panel"], fg=c["fg"],
+                                 insertbackground=c["fg"], relief="flat")
+            elif isinstance(widget, tk.Listbox):
+                widget.configure(bg=c["panel"], fg=c["fg"],
+                                 selectbackground=c["accent"],
+                                 selectforeground="#10141d", relief="flat")
         for child in widget.winfo_children():
             self.paint(child, c)
 
