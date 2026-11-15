@@ -486,21 +486,6 @@ class DJStudio(tk.Tk):
   self.deck_started[key]=time.monotonic();self.deck_play_button[key].configure(text="■ STOP")
   self.set_status("Deck "+key+" playing: "+os.path.basename(self.deck_tracks[key]))
 
- def make_audio_slice(self,key,start,end):
-  source=self.deck_sounds.get(key)
-  if source is None: return None
-  try:
-   import pygame.sndarray
-   import numpy as np
-   rate,fmt,channels=pygame.mixer.get_init()
-   samples=pygame.sndarray.array(source)
-   first=max(0,int(start*rate))
-   last=len(samples) if end is None else min(len(samples),int(end*rate))
-   if last<=first: return None
-   return pygame.sndarray.make_sound(np.ascontiguousarray(samples[first:last]))
-  except Exception as e:
-   self.set_status("Cue/loop audio slice unavailable: "+str(e)[:90])
-   return None
 
  def current_position(self,key):
   return self.audio_engine.position(key) if self.deck_tracks.get(key) else 0.0
