@@ -111,10 +111,14 @@ class DJStudio(tk.Tk):
   self.search=tk.StringVar()
   self.search_entry=tk.Entry(self.library_panel,textvariable=self.search,bd=0,font=("Segoe UI",10),insertbackground="white")
   self.search_entry.pack(fill="x",pady=(10,8),ipady=8); self.search_entry.bind("<KeyRelease>",lambda e:self.refresh_tracks())
-  self.table=ttk.Treeview(self.library_panel,columns=("track","bpm","duration","folder"),show="headings",selectmode="browse")
+  table_wrap=self.frame(self.library_panel); table_wrap.pack(fill="both",expand=True)
+  self.table=ttk.Treeview(table_wrap,columns=("track","bpm","duration","folder"),show="headings",selectmode="browse")
   self.table.heading("track",text="TRACK TITLE"); self.table.heading("bpm",text="BPM"); self.table.heading("duration",text="LENGTH"); self.table.heading("folder",text="FILE LOCATION")
   self.table.column("track",width=270); self.table.column("bpm",width=65,anchor="center"); self.table.column("duration",width=80,anchor="center"); self.table.column("folder",width=260)
-  self.table.pack(fill="both",expand=True); self.table.bind("<Double-1>",lambda e:self.load_to("A"))
+  table_scroll=ttk.Scrollbar(table_wrap,orient="vertical",command=self.table.yview)
+  self.table.configure(yscrollcommand=table_scroll.set)
+  self.table.pack(side="left",fill="both",expand=True); table_scroll.pack(side="right",fill="y")
+  self.table.bind("<Double-1>",lambda e:self.load_to("A"))
   actionrow=self.frame(self.library_panel); actionrow.pack(fill="x",pady=(8,0))
   self.button(actionrow,"LOAD → DECK A",lambda:self.load_to("A")).pack(side="left",padx=(0,5))
   self.button(actionrow,"LOAD → DECK B",lambda:self.load_to("B")).pack(side="left",padx=5)
@@ -126,6 +130,7 @@ class DJStudio(tk.Tk):
   self.mixer_panel=self.frame(self.bottom,padx=12,pady=9); self.mixer_panel.pack(side="left",fill="both",expand=True,padx=(0,7))
   self.label(self.mixer_panel,"MIXER  •  AUDIO LEVELS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   controls=self.frame(self.mixer_panel); controls.pack(fill="x",pady=(5,0))
+  self.eq_controls={}
   for name in ("GAIN A","LOW A","MID A","HIGH A","CROSSFADER","HIGH B","MID B","LOW B","GAIN B"):
    col=self.frame(controls); col.pack(side="left",expand=True,fill="x",padx=3)
    self.label(col,name,font=("Segoe UI",7,"bold")).pack()
@@ -136,7 +141,8 @@ class DJStudio(tk.Tk):
    elif name=="CROSSFADER":
     sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=100,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(0); sc.pack()
    else:
-    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_status(n+" EQ is not active yet")); sc.set(50); sc.pack()
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_status(n+" EQ needs the new audio engine")); sc.set(50); sc.pack()
+    self.eq_controls[name]=sc
   self.sampler_panel=self.frame(self.bottom,width=290,padx=10,pady=9); self.sampler_panel.pack(side="right",fill="y"); self.sampler_panel.pack_propagate(False)
   self.label(self.sampler_panel,"SAMPLE PADS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   pads=self.frame(self.sampler_panel); pads.pack(fill="both",expand=True,pady=5)
@@ -147,7 +153,7 @@ class DJStudio(tk.Tk):
   for i in range(2): pads.rowconfigure(i,weight=1)
   self.statusbar=tk.Label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7,bd=0); self.statusbar.pack(fill="x",pady=(8,0))
   self.refresh_playlists(); self.refresh_tracks(); self.refresh_queue()
-  self.after(80,self.update_deck_displays)
+  self.after(50,self.update_deck_displays)
 
  def build_deck(self,parent,key):
   p=self.frame(parent,padx=12,pady=10); p.pack(side="left",fill="both",expand=True,padx=4)
@@ -214,13 +220,13 @@ class DJStudio(tk.Tk):
    end=min(duration,start+window)
    if end-start<window: start=max(0.0,end-window)
    span=max(0.001,end-start)
-   bars=max(1,w//3)
+   bars=max(1,w//5)
    for x in range(bars):
     t=start+(x/max(1,bars-1))*span
     idx=max(0,min(len(values)-1,int((t/duration)*len(values))))
     amp=max(1,min(21,int(values[idx]*21)))
     px=int(x*w/bars)
-    cv.create_line(px,y0+row_h/2-amp,px,y0+row_h/2+amp,fill=colors[key],width=2)
+    cv.create_line(px,y0+row_h/2-amp,px,y0+row_h/2+amp,fill=colors[key],width=3)
    bpm=self.deck_bpms.get(key)
    if bpm and bpm>0:
     beat=60.0/bpm
@@ -260,7 +266,7 @@ class DJStudio(tk.Tk):
     self.draw_wave(key)
     if left<=0:
      self.deck_started[key]=None; self.deck_play_button[key].configure(text="▶ PLAY")
-  self.after(250,self.update_deck_displays)
+  self.after(50,self.update_deck_displays)
 
  def draw_wave(self,key):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["wave"]; cv.delete("all")
