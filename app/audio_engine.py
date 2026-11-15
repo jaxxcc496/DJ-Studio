@@ -1,24 +1,33 @@
+import math
 import threading
+
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-from scipy.signal import butter, sosfilt
+from scipy.signal import butter, sosfilt, resample_poly
+
 
 class AudioEngine:
-    """Two-deck callback audio engine with pitch, 3-band EQ and crossfader."""
+    """Callback-based two-deck mixer with stateful EQ and eight one-shot sample slots."""
+
     def __init__(self, sample_rate=44100, blocksize=512):
         self.sample_rate = int(sample_rate)
         self.blocksize = int(blocksize)
         self.lock = threading.RLock()
-        self.decks = {k: self._new_deck() for k in ("A", "B")}
+        self.decks = {key: self._new_deck() for key in ("A", "B")}
         self.crossfade = 0.0
+        self.samples = [self._new_sample() for _ in range(8)]
         self.stream = None
         self.error = None
         self._filters = {
             "low": butter(2, 250, btype="lowpass", fs=self.sample_rate, output="sos"),
-            "lowcut": butter(2, 250, btype="highpass", fs=self.sample_rate, output="sos"),
-            "midcut": butter(2, 2500, btype="lowpass", fs=self.sample_rate, output="sos"),
+            "mid": butter(2, (250, 2500), btype="bandpass", fs=self.sample_rate, output="sos"),
             "high": butter(2, 2500, btype="highpass", fs=self.sample_rate, output="sos"),
+        }
+        self._eq_state = {
+            deck: {band: np.zeros((len(sos), 2, 2), dtype=np.float64)
+                   for band, sos in self._filters.items()}
+            for deck in ("A", "B")
         }
 
     @staticmethod
@@ -26,8 +35,12 @@ class AudioEngine:
         return {
             "audio": None, "position": 0.0, "playing": False, "pitch": 1.0,
             "gain": 1.0, "eq": {"low": 0.0, "mid": 0.0, "high": 0.0},
-            "loop": None, "path": None
+            "loop": None, "path": None,
         }
+
+    @staticmethod
+    def _new_sample():
+        return {"audio": None, "position": 0, "playing": False, "path": None, "gain": 1.0}
 
     def start(self):
         if self.stream is not None:
@@ -35,7 +48,7 @@ class AudioEngine:
         try:
             self.stream = sd.OutputStream(
                 samplerate=self.sample_rate, channels=2, dtype="float32",
-                blocksize=self.blocksize, callback=self._callback
+                blocksize=self.blocksize, callback=self._callback,
             )
             self.stream.start()
             return True
@@ -52,29 +65,61 @@ class AudioEngine:
             finally:
                 self.stream = None
 
-    def load(self, deck, path):
+    def _decode(self, path):
         try:
             data, sr = sf.read(path, dtype="float32", always_2d=True)
         except Exception:
-            # Fallback decoder for formats not supported by the installed libsndfile.
             import librosa
             audio, sr = librosa.load(path, sr=self.sample_rate, mono=False, dtype=np.float32)
             data = audio.T if audio.ndim > 1 else audio[:, None]
             sr = self.sample_rate
         if sr != self.sample_rate:
-            from scipy.signal import resample_poly
-            import math
-            g = math.gcd(int(sr), self.sample_rate)
-            data = resample_poly(data, self.sample_rate // g, int(sr) // g, axis=0).astype(np.float32)
+            divisor = math.gcd(int(sr), self.sample_rate)
+            data = resample_poly(data, self.sample_rate // divisor, int(sr) // divisor, axis=0)
         if data.shape[1] == 1:
             data = np.repeat(data, 2, axis=1)
         elif data.shape[1] > 2:
             data = data[:, :2]
+        return np.ascontiguousarray(data, dtype=np.float32)
+
+    def load(self, deck, path):
+        data = self._decode(path)
         with self.lock:
-            d = self.decks[deck]
-            d.update(audio=np.ascontiguousarray(data), position=0.0, playing=False,
-                     pitch=1.0, loop=None, path=path)
+            self.decks[deck].update(audio=data, position=0.0, playing=False,
+                                    pitch=1.0, loop=None, path=path)
+            self._reset_eq_state(deck)
         return len(data) / self.sample_rate
+
+    def load_sample(self, slot, path):
+        data = self._decode(path)
+        with self.lock:
+            self.samples[int(slot)].update(audio=data, position=0, playing=False, path=path)
+        return len(data) / self.sample_rate
+
+    def trigger_sample(self, slot):
+        with self.lock:
+            sample = self.samples[int(slot)]
+            if sample["audio"] is None:
+                return False
+            sample["position"] = 0
+            sample["playing"] = True
+            return True
+
+    def stop_sample(self, slot):
+        with self.lock:
+            sample = self.samples[int(slot)]
+            sample["playing"] = False
+            sample["position"] = 0
+
+    def stop_all_samples(self):
+        with self.lock:
+            for sample in self.samples:
+                sample["playing"] = False
+                sample["position"] = 0
+
+    def _reset_eq_state(self, deck):
+        for band, sos in self._filters.items():
+            self._eq_state[deck][band] = np.zeros((len(sos), 2, 2), dtype=np.float64)
 
     def play(self, deck):
         with self.lock:
@@ -92,13 +137,15 @@ class AudioEngine:
             d["loop"] = None
             if reset:
                 d["position"] = 0.0
+            self._reset_eq_state(deck)
 
     def seek(self, deck, seconds):
         with self.lock:
             d = self.decks[deck]
             if d["audio"] is not None:
-                d["position"] = float(np.clip(seconds, 0, max(0, len(d["audio"]) / self.sample_rate)))
-    
+                d["position"] = float(np.clip(seconds, 0, len(d["audio"]) / self.sample_rate))
+                self._reset_eq_state(deck)
+
     def position(self, deck):
         with self.lock:
             return float(self.decks[deck]["position"])
@@ -109,9 +156,11 @@ class AudioEngine:
 
     def set_gain(self, deck, value):
         with self.lock:
-            self.decks[deck]["gain"] = float(np.clip(value, 0.0, 1.0))
+            self.decks[deck]["gain"] = float(np.clip(value, 0.0, 1.5))
 
     def set_eq(self, deck, band, value):
+        if band not in ("low", "mid", "high"):
+            raise ValueError("EQ band must be low, mid or high")
         with self.lock:
             self.decks[deck]["eq"][band] = float(np.clip(value, -1.0, 1.0))
 
@@ -125,58 +174,79 @@ class AudioEngine:
             if d["audio"] is not None and end > start:
                 d["loop"] = (float(start), float(end))
                 d["position"] = float(start)
+                self._reset_eq_state(deck)
 
     def clear_loop(self, deck):
         with self.lock:
             self.decks[deck]["loop"] = None
 
-    def _eq_block(self, data, eq):
-        # Three-band parallel EQ: low + mid + high with neutral unity defaults.
-        if not any(abs(v) > 0.001 for v in eq.values()):
+    def _eq_block(self, deck, data, eq):
+        if not any(abs(value) > 0.001 for value in eq.values()):
             return data
-        try:
-            low = sosfilt(self._filters["low"], data, axis=0)
-            high = sosfilt(self._filters["high"], data, axis=0)
-            mid = sosfilt(self._filters["lowcut"], data, axis=0)
-            mid = sosfilt(self._filters["midcut"], mid, axis=0)
-            gl, gm, gh = (10.0 ** (eq[k] * 1.2) for k in ("low", "mid", "high"))
-            return low * gl + mid * gm + high * gh
-        except Exception:
-            return data
+        result = data.astype(np.float64, copy=True)
+        for band, sos in self._filters.items():
+            amount = eq[band]
+            if abs(amount) <= 0.001:
+                continue
+            filtered, state = sosfilt(
+                sos, data, axis=0, zi=self._eq_state[deck][band]
+            )
+            self._eq_state[deck][band] = state
+            gain = 10.0 ** (amount * 1.2)
+            result += filtered * (gain - 1.0)
+        return result.astype(np.float32)
 
     def _callback(self, outdata, frames, time_info, status):
         outdata.fill(0)
         with self.lock:
+            fade = self.crossfade
+            # Equal-power law keeps perceived level steadier through the centre.
+            angle = (fade + 1.0) * (math.pi / 4.0)
+            deck_levels = {"A": math.cos(angle), "B": math.sin(angle)}
             for key in ("A", "B"):
                 d = self.decks[key]
                 audio = d["audio"]
                 if not d["playing"] or audio is None:
                     continue
-                n = len(audio)
-                step = d["pitch"] * (self.sample_rate / self.sample_rate)
-                pos = d["position"]
-                idx = pos * self.sample_rate + step * np.arange(frames, dtype=np.float64)
+                length = len(audio)
+                step = d["pitch"]
+                indices = d["position"] * self.sample_rate + step * np.arange(frames)
                 if d["loop"] is not None:
-                    a, b = d["loop"]
-                    length = max(1.0, (b-a) * self.sample_rate)
-                    idx = a * self.sample_rate + np.mod(idx - a*self.sample_rate, length)
-                valid = idx < n
+                    start, end = d["loop"]
+                    loop_start = start * self.sample_rate
+                    loop_length = max(1.0, (end - start) * self.sample_rate)
+                    indices = loop_start + np.mod(indices - loop_start, loop_length)
+                valid = indices < length
                 if not np.any(valid):
                     d["playing"] = False
                     continue
-                idx0 = np.floor(idx[valid]).astype(np.int64)
-                idx1 = np.minimum(idx0 + 1, n - 1)
-                frac = (idx[valid] - idx0).astype(np.float32)[:, None]
+                i0 = np.floor(indices[valid]).astype(np.int64)
+                i1 = np.minimum(i0 + 1, length - 1)
+                frac = (indices[valid] - i0).astype(np.float32)[:, None]
                 block = np.zeros((frames, 2), dtype=np.float32)
-                block[valid] = audio[idx0] * (1.0-frac) + audio[idx1] * frac
-                block = self._eq_block(block, d["eq"])
-                fade = self.crossfade
-                level = d["gain"] * ((1.0-max(0.0, fade)) if key == "A" else (1.0+min(0.0, fade)))
-                outdata += block * level
-                d["position"] = float(pos + frames * step / self.sample_rate)
+                block[valid] = audio[i0] * (1.0 - frac) + audio[i1] * frac
+                block = self._eq_block(key, block, d["eq"])
+                outdata += block * (d["gain"] * deck_levels[key])
+                d["position"] += frames * step / self.sample_rate
                 if d["loop"] is not None and d["position"] >= d["loop"][1]:
-                    d["position"] = d["loop"][0] + (d["position"]-d["loop"][0]) % (d["loop"][1]-d["loop"][0])
-                elif d["position"] >= n / self.sample_rate:
-                    d["position"] = n / self.sample_rate
+                    start, end = d["loop"]
+                    d["position"] = start + (d["position"] - start) % (end - start)
+                elif d["position"] >= length / self.sample_rate:
+                    d["position"] = length / self.sample_rate
                     d["playing"] = False
-        np.clip(outdata, -1.0, 1.0, out=outdata)
+
+            for sample in self.samples:
+                audio = sample["audio"]
+                if not sample["playing"] or audio is None:
+                    continue
+                start = sample["position"]
+                count = min(frames, len(audio) - start)
+                if count > 0:
+                    outdata[:count] += audio[start:start + count] * sample["gain"]
+                    sample["position"] += count
+                if sample["position"] >= len(audio):
+                    sample["playing"] = False
+                    sample["position"] = 0
+
+        # Soft clipping prevents harsh digital overflow when decks and samples overlap.
+        np.tanh(outdata, out=outdata)
