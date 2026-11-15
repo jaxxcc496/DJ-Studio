@@ -81,6 +81,8 @@ class DJStudio(tk.Tk):
   self.settings_btn=self.button(self.top,"SETTINGS",self.open_settings); self.settings_btn.pack(side="right",padx=(8,2))
   self.theme_label=self.label(self.top,text="THEME",font=("Segoe UI",8,"bold")); self.theme_label.pack(side="right",padx=6)
 
+  self.rhythm_wave=tk.Canvas(self,height=112,bd=0,highlightthickness=0)
+  self.rhythm_wave.pack(fill="x",pady=(0,8))
   self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,9))
   self.deck_ui={}
   for key in ("A","B"): self.build_deck(self.deck_row,key)
@@ -145,7 +147,7 @@ class DJStudio(tk.Tk):
   for i in range(2): pads.rowconfigure(i,weight=1)
   self.statusbar=tk.Label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7,bd=0); self.statusbar.pack(fill="x",pady=(8,0))
   self.refresh_playlists(); self.refresh_tracks(); self.refresh_queue()
-  self.after(250,self.update_deck_displays)
+  self.after(80,self.update_deck_displays)
 
  def build_deck(self,parent,key):
   p=self.frame(parent,padx=12,pady=10); p.pack(side="left",fill="both",expand=True,padx=4)
@@ -188,6 +190,50 @@ class DJStudio(tk.Tk):
  def format_time(self,seconds):
   seconds=max(0,int(seconds)); return "%02d:%02d"%(seconds//60,seconds%60)
 
+ def draw_rhythm_wave(self):
+  if not hasattr(self,"rhythm_wave") or not hasattr(self,"deck_ui"): return
+  cv=self.rhythm_wave
+  c=THEMES[self.theme_name.get()]
+  cv.delete("all")
+  w=max(500,cv.winfo_width()); h=112
+  cv.create_rectangle(0,0,w,h,fill="#080d15",outline=c["line"])
+  row_h=52
+  colors={"A":"#28b8ff","B":"#ff526d"}
+  for row,key in enumerate(("A","B")):
+   y0=row*56
+   cv.create_line(0,y0+row_h,w,y0+row_h,fill="#263343")
+   path=self.deck_tracks.get(key)
+   values=self.deck_waveforms.get(key,[])
+   duration=self.deck_duration.get(key,0.0)
+   if not path or not values or duration<=0:
+    cv.create_text(10,y0+row_h/2,text="DECK "+key+"  •  LOAD A TRACK TO VIEW WAVEFORM",anchor="w",fill="#77889b",font=("Segoe UI",8,"bold"))
+    continue
+   pos=self.current_position(key)
+   window=14.0
+   start=max(0.0,pos-window/2)
+   end=min(duration,start+window)
+   if end-start<window: start=max(0.0,end-window)
+   span=max(0.001,end-start)
+   bars=max(1,w//3)
+   for x in range(bars):
+    t=start+(x/max(1,bars-1))*span
+    idx=max(0,min(len(values)-1,int((t/duration)*len(values))))
+    amp=max(1,min(21,int(values[idx]*21)))
+    px=int(x*w/bars)
+    cv.create_line(px,y0+row_h/2-amp,px,y0+row_h/2+amp,fill=colors[key],width=2)
+   bpm=self.deck_bpms.get(key)
+   if bpm and bpm>0:
+    beat=60.0/bpm
+    first=math.ceil(start/beat)
+    last=int(end/beat)
+    for n in range(first,last+1):
+     x=int(((n*beat-start)/span)*w)
+     if 0<=x<w: cv.create_line(x,y0+3,x,y0+row_h-3,fill="#42546a",width=1,dash=(2,4))
+   center=w//2
+   cv.create_line(center,y0+2,center,y0+row_h-2,fill="#ffffff",width=2)
+   cv.create_text(8,y0+4,text="A" if key=="A" else "B",anchor="nw",fill=colors[key],font=("Segoe UI",8,"bold"))
+  cv.create_text(w-8,4,text="LIVE RHYTHM WAVEFORM",anchor="ne",fill="#aab8c8",font=("Segoe UI",7,"bold"))
+
  def update_deck_displays(self):
   a=self.deck_bpms.get("A"); b=self.deck_bpms.get("B")
   if hasattr(self,"beatmatch_label"):
@@ -196,6 +242,7 @@ class DJStudio(tk.Tk):
     self.beatmatch_label.configure(text="BEATMATCH  •  A %.1f BPM   |   B %.1f BPM   |   DIFFERENCE %.1f BPM   |   RATE MATCH %.1f%%"%(a,b,diff,relation))
    else:
     self.beatmatch_label.configure(text="BEATMATCH  •  Load and analyse tracks in both decks to compare BPM")
+  self.draw_rhythm_wave()
   for key in ("A","B"):
    channel=self.deck_channels.get(key) if self.audio_ready else None
    if channel and channel.get_busy() and self.deck_started[key] is not None:
@@ -250,15 +297,17 @@ class DJStudio(tk.Tk):
   def worker():
    try:
     import librosa
-    audio,sr=librosa.load(path,sr=8000,mono=True,duration=90)
+    audio,sr=librosa.load(path,sr=8000,mono=True)
     rms=librosa.feature.rms(y=audio,frame_length=1024,hop_length=512)[0]
     peak=float(max(rms)) if len(rms) else 0.0
     waveform=[float(v/peak) if peak else 0.0 for v in rms]
     onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=512)
-    tempo,_=librosa.beat.beat_track(onset_envelope=onset,sr=sr,hop_length=512,units="frames",trim=True)
-    try: bpm=float(tempo[0])
-    except (TypeError,IndexError): bpm=float(tempo)
-    if not 50 <= bpm <= 220: bpm=None
+    tempo_values=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=512,aggregate=None)
+    tempo=float(np.median(tempo_values)) if len(tempo_values) else 0.0
+    bpm=float(tempo)
+    if 70 <= bpm/2 <= 180 and bpm>180: bpm/=2.0
+    elif bpm<70 and bpm*2<=180: bpm*=2.0
+    if not 70 <= bpm <= 180: bpm=None
     result=(waveform,bpm)
    except Exception as e:
     result=([],None)
