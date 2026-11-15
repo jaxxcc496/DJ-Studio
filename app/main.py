@@ -82,7 +82,7 @@ class DJStudio(tk.Tk):
   self.settings_btn=self.button(self.top,"SETTINGS",self.open_settings); self.settings_btn.pack(side="right",padx=(8,2))
   self.theme_label=self.label(self.top,text="THEME",font=("Segoe UI",8,"bold")); self.theme_label.pack(side="right",padx=6)
 
-  self.rhythm_wave=tk.Canvas(self,height=112,bd=0,highlightthickness=0)
+  self.rhythm_wave=tk.Canvas(self,height=132,bd=0,highlightthickness=0)
   self.rhythm_wave.pack(fill="x",pady=(0,8))
   self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,9))
   self.deck_ui={}
@@ -176,7 +176,7 @@ class DJStudio(tk.Tk):
   title=self.label(p,"No track loaded",font=("Segoe UI",11,"bold"),anchor="w"); title.pack(fill="x",pady=(8,0))
   time=self.label(p,"00:00 / 00:00  •  LEFT 00:00",font=("Segoe UI",10,"bold")); time.pack(anchor="w")
   bpm=self.label(p,"BPM  —",font=("Segoe UI",11,"bold")); bpm.pack(anchor="w",pady=(2,0))
-  wave=tk.Canvas(p,height=64,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
+  wave=tk.Canvas(p,height=104,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
   row=self.frame(p); row.pack(fill="x")
   jog=tk.Canvas(row,width=116,height=116,bd=0,highlightthickness=0); jog.pack(side="left",padx=(0,12))
   jog.bind("<Button-1>",lambda e,k=key:self.jog_start(k,e))
@@ -221,47 +221,35 @@ class DJStudio(tk.Tk):
 
  def draw_rhythm_wave(self):
   if not hasattr(self,"rhythm_wave") or not hasattr(self,"deck_ui"): return
-  cv=self.rhythm_wave
-  c=THEMES[self.theme_name.get()]
-  cv.delete("all")
-  w=max(500,cv.winfo_width()); h=112
-  cv.create_rectangle(0,0,w,h,fill="#080d15",outline=c["line"])
-  row_h=52
-  colors={"A":"#28b8ff","B":"#ff526d"}
+  cv=self.rhythm_wave; cv.delete("all")
+  w=max(500,cv.winfo_width()); h=132
+  cv.create_rectangle(0,0,w,h,fill="#080d15",outline="#303b49")
+  row_h=62; colors={"A":"#28b8ff","B":"#ff526d"}
   for row,key in enumerate(("A","B")):
-   y0=row*56
-   cv.create_line(0,y0+row_h,w,y0+row_h,fill="#263343")
-   path=self.deck_tracks.get(key)
-   values=self.deck_waveforms.get(key,[])
-   duration=self.deck_duration.get(key,0.0)
+   y0=row*66; cv.create_line(0,y0+row_h,w,y0+row_h,fill="#263343")
+   path=self.deck_tracks.get(key); values=self.deck_waveforms.get(key,[]); duration=self.deck_duration.get(key,0.0)
    if not path or not values or duration<=0:
-    cv.create_text(10,y0+row_h/2,text="DECK "+key+"  •  LOAD A TRACK TO VIEW WAVEFORM",anchor="w",fill="#77889b",font=("Segoe UI",8,"bold"))
-    continue
-   pos=self.current_position(key)
-   window=14.0
-   start=max(0.0,pos-window/2)
-   end=min(duration,start+window)
+    cv.create_text(12,y0+row_h/2,text="DECK "+key+"   LOAD TRACK TO ANALYSE WAVEFORM",anchor="w",fill="#77889b",font=("Segoe UI",9,"bold")); continue
+   pos=self.current_position(key); window=16.0
+   start=max(0.0,pos-window/2); end=min(duration,start+window)
    if end-start<window: start=max(0.0,end-window)
-   span=max(0.001,end-start)
-   bars=max(1,w//5)
+   span=max(0.001,end-start); center=y0+row_h//2; bars=max(1,w//3)
    for x in range(bars):
-    t=start+(x/max(1,bars-1))*span
-    idx=max(0,min(len(values)-1,int((t/duration)*len(values))))
-    amp=max(1,min(21,int(values[idx]*21)))
-    px=int(x*w/bars)
-    cv.create_line(px,y0+row_h/2-amp,px,y0+row_h/2+amp,fill=colors[key],width=3)
+    t=start+(x/max(1,bars-1))*span; idx=max(0,min(len(values)-1,int((t/duration)*len(values))))
+    bands=values[idx]; amp=max(bands) if isinstance(bands,(list,tuple)) else bands
+    height=max(1,min(25,int(amp*25))); px=int(x*w/bars)
+    cv.create_line(px,center-height,px,center+height,fill=colors[key],width=2)
    bpm=self.deck_bpms.get(key)
    if bpm and bpm>0:
     beat=60.0/bpm
-    first=math.ceil(start/beat)
-    last=int(end/beat)
-    for n in range(first,last+1):
+    for n in range(math.ceil(start/beat),int(end/beat)+1):
      x=int(((n*beat-start)/span)*w)
-     if 0<=x<w: cv.create_line(x,y0+3,x,y0+row_h-3,fill="#42546a",width=1,dash=(2,4))
-   center=w//2
-   cv.create_line(center,y0+2,center,y0+row_h-2,fill="#ffffff",width=2)
-   cv.create_text(8,y0+4,text="A" if key=="A" else "B",anchor="nw",fill=colors[key],font=("Segoe UI",8,"bold"))
-  cv.create_text(w-8,4,text="LIVE RHYTHM WAVEFORM",anchor="ne",fill="#aab8c8",font=("Segoe UI",7,"bold"))
+     if 0<=x<w:
+      cv.create_line(x,y0+5,x,y0+row_h-5,fill="#52647a",width=1,dash=(2,4))
+      if n%4==0: cv.create_line(x,y0+3,x,y0+row_h-3,fill="#8da0b8",width=1)
+   cv.create_text(10,y0+5,text=key,anchor="nw",fill=colors[key],font=("Segoe UI",9,"bold"))
+   cv.create_line(w//2,y0+2,w//2,y0+row_h-2,fill="#ffffff",width=2)
+  cv.create_text(w-10,5,text="DUAL DECK • BEAT OVERVIEW",anchor="ne",fill="#aab8c8",font=("Segoe UI",8,"bold"))
 
  def update_deck_displays(self):
   a=self.deck_bpms.get("A");b=self.deck_bpms.get("B")
@@ -278,32 +266,33 @@ class DJStudio(tk.Tk):
 
  def draw_wave(self,key):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["wave"]; cv.delete("all")
-  w=max(cv.winfo_width(),420); h=64; mid=h//2
-  cv.create_rectangle(0,0,w,h,fill=c["panel"],outline="")
-  values=self.deck_waveforms.get(key,[])
+  w=max(cv.winfo_width(),420); h=max(cv.winfo_height(),104)
+  cv.create_rectangle(0,0,w,h,fill="#090e16",outline=c["line"])
+  values=self.deck_waveforms.get(key,[]); lane_h=(h-18)/3
+  lane_colors=("#ff4b55","#42d878","#36a9ff"); lane_names=("LOW","MID","HIGH")
   if values:
-   step=max(1,len(values)//max(1,w//3))
-   for x in range(0,w,3):
-    idx=min(len(values)-1,int(x/max(1,w)*len(values)))
-    amp=max(2,min(28,int(values[idx]*28)))
-    cv.create_line(x,mid-amp,x,mid+amp,fill=c["accent"],width=2)
-   cv.create_text(8,6,text="ANALYSED AUDIO",anchor="nw",fill=c["muted"],font=("Segoe UI",7,"bold"))
+   for band in range(3):
+    y0=9+band*lane_h; mid=y0+lane_h/2
+    cv.create_line(0,y0+lane_h,w,y0+lane_h,fill="#263343")
+    cv.create_text(7,y0+3,text=lane_names[band],anchor="nw",fill=lane_colors[band],font=("Segoe UI",7,"bold"))
+    for x in range(0,w,2):
+     idx=min(len(values)-1,int(x/max(1,w-1)*(len(values)-1))); sample=values[idx]
+     amp=sample[band] if isinstance(sample,(list,tuple)) and len(sample)>=3 else sample
+     height=max(1,min(lane_h*0.38,amp*lane_h*0.38))
+     cv.create_line(x,mid-height,x,mid+height,fill=lane_colors[band],width=2)
   else:
-   cv.create_text(8,7,text="ANALYSING AUDIO WHEN TRACK IS LOADED",anchor="nw",fill=c["muted"],font=("Segoe UI",7,"bold"))
-  duration=self.deck_duration.get(key,0.0) or 0.0
-  pos=0.0
+   cv.create_text(w/2,h/2,text="ANALYSING TRACK • FREQUENCY WAVEFORM",anchor="center",fill=c["muted"],font=("Segoe UI",9,"bold"))
+  duration=self.deck_duration.get(key,0.0) or 0.0; pos=0.0
   if self.deck_started.get(key) is not None:
    pos=self.deck_play_offset.get(key,0.0)+max(0,time.monotonic()-self.deck_started[key])
    if self.deck_loop_active.get(key) and self.deck_loop_sound.get(key):
     loop_len=self.deck_loop_sound[key].get_length()
     if loop_len>0: pos=self.deck_play_offset.get(key,0.0)+(pos-self.deck_play_offset.get(key,0.0))%loop_len
-  for name,stamp in self.deck_cues.get(key,{}).items():
-   if duration>0:
-    cx=max(0,min(w,int(stamp/duration*w)))
-    cv.create_line(cx,2,cx,h-2,fill=c["hot"],width=1)
   if duration>0:
-   px=max(0,min(w,int(pos/duration*w)))
-   cv.create_line(px,1,px,h-1,fill="#ffffff",width=2)
+   for name,stamp in self.deck_cues.get(key,{}).items():
+    cx=max(0,min(w,int(stamp/duration*w))); cv.create_line(cx,2,cx,h-2,fill=c["hot"],width=2)
+   px=max(0,min(w,int(pos/duration*w))); cv.create_line(px,1,px,h-1,fill="#ffffff",width=2)
+  cv.create_text(w-7,4,text=key,anchor="ne",fill=c["fg"],font=("Segoe UI",8,"bold"))
 
  def analyse_track(self,path,key):
   if path in self.analysis_cache:
@@ -312,12 +301,20 @@ class DJStudio(tk.Tk):
    try:
     import librosa
     import numpy as np
-    audio,sr=librosa.load(path,sr=8000,mono=True)
-    rms=librosa.feature.rms(y=audio,frame_length=1024,hop_length=512)[0]
-    peak=float(max(rms)) if len(rms) else 0.0
-    waveform=[float(v/peak) if peak else 0.0 for v in rms]
-    onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=512)
-    tempo_values=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=512,aggregate=None)
+    audio,sr=librosa.load(path,sr=8000,mono=True); hop=512
+    spectrum=np.abs(librosa.stft(audio,n_fft=2048,hop_length=hop))
+    frequencies=librosa.fft_frequencies(sr=sr,n_fft=2048)
+    bands=[]
+    for low,high in ((20,250),(250,2500),(2500,4000)):
+     mask=(frequencies>=low)&(frequencies<high)
+     energy=np.mean(spectrum[mask],axis=0) if np.any(mask) else np.zeros(spectrum.shape[1])
+     scale=float(np.percentile(energy,98)) if len(energy) else 0.0
+     bands.append(np.clip(energy/max(scale,1e-9),0.0,1.0))
+    count=min(len(bands[0]),6000)
+    indexes=np.linspace(0,len(bands[0])-1,count).astype(int) if count else []
+    waveform=[(float(bands[0][i]),float(bands[1][i]),float(bands[2][i])) for i in indexes]
+    onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=hop)
+    tempo_values=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=None)
     tempo=float(np.median(tempo_values)) if len(tempo_values) else 0.0
     bpm=float(tempo)
     if 70 <= bpm/2 <= 180 and bpm>180: bpm/=2.0
@@ -325,8 +322,7 @@ class DJStudio(tk.Tk):
     if not 70 <= bpm <= 180: bpm=None
     result=(waveform,bpm)
    except Exception as e:
-    result=([],None)
-    error=str(e)
+    result=([],None); error=str(e)
    else: error=None
    self.analysis_cache[path]=result
    try: self.after(0,lambda:self.apply_analysis(path,key,*result,error=error))
