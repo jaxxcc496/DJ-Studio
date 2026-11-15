@@ -25,6 +25,7 @@ class DJStudio(tk.Tk):
   self.queue=[]
   self.tracks=[]; self.playlists={"All Tracks":[]}; self.current_playlist="All Tracks"
   self.deck_tracks={"A":None,"B":None}; self.cue_points={"A":[],"B":[]}
+  self.deck_started={"A":None,"B":None}; self.deck_duration={"A":0.0,"B":0.0}
   self.deck_sounds={"A":None,"B":None}; self.deck_channels={"A":None,"B":None}
   self.audio_ready=False
   try:
@@ -99,9 +100,9 @@ class DJStudio(tk.Tk):
   self.search=tk.StringVar()
   self.search_entry=tk.Entry(self.library_panel,textvariable=self.search,bd=0,font=("Segoe UI",10),insertbackground="white")
   self.search_entry.pack(fill="x",pady=(10,8),ipady=8); self.search_entry.bind("<KeyRelease>",lambda e:self.refresh_tracks())
-  self.table=ttk.Treeview(self.library_panel,columns=("track","folder"),show="headings",selectmode="browse")
-  self.table.heading("track",text="TRACK TITLE"); self.table.heading("folder",text="FILE LOCATION")
-  self.table.column("track",width=370); self.table.column("folder",width=300)
+  self.table=ttk.Treeview(self.library_panel,columns=("track","bpm","duration","folder"),show="headings",selectmode="browse")
+  self.table.heading("track",text="TRACK TITLE"); self.table.heading("bpm",text="BPM"); self.table.heading("duration",text="LENGTH"); self.table.heading("folder",text="FILE LOCATION")
+  self.table.column("track",width=270); self.table.column("bpm",width=65,anchor="center"); self.table.column("duration",width=80,anchor="center"); self.table.column("folder",width=260)
   self.table.pack(fill="both",expand=True); self.table.bind("<Double-1>",lambda e:self.load_to("A"))
   actionrow=self.frame(self.library_panel); actionrow.pack(fill="x",pady=(8,0))
   self.button(actionrow,"LOAD → DECK A",lambda:self.load_to("A")).pack(side="left",padx=(0,5))
@@ -128,6 +129,7 @@ class DJStudio(tk.Tk):
   for i in range(2): pads.rowconfigure(i,weight=1)
   self.statusbar=tk.Label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7,bd=0); self.statusbar.pack(fill="x",pady=(8,0))
   self.refresh_playlists(); self.refresh_tracks(); self.refresh_queue()
+  self.after(250,self.update_deck_displays)
 
  def build_deck(self,parent,key):
   p=self.frame(parent,padx=12,pady=10); p.pack(side="left",fill="both",expand=True,padx=4)
@@ -135,7 +137,8 @@ class DJStudio(tk.Tk):
   self.label(head,"DECK "+key,font=("Segoe UI",13,"bold")).pack(side="left")
   self.label(head,"●  READY",font=("Segoe UI",8,"bold")).pack(side="right")
   title=self.label(p,"No track loaded",font=("Segoe UI",11,"bold"),anchor="w"); title.pack(fill="x",pady=(8,0))
-  time=self.label(p,"00:00.0",font=("Segoe UI",22,"bold")); time.pack(anchor="w")
+  time=self.label(p,"00:00 / 00:00  •  LEFT 00:00",font=("Segoe UI",10,"bold")); time.pack(anchor="w")
+  bpm=self.label(p,"BPM  —",font=("Segoe UI",11,"bold")); bpm.pack(anchor="w",pady=(2,0))
   wave=tk.Canvas(p,height=64,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
   row=self.frame(p); row.pack(fill="x")
   jog=tk.Canvas(row,width=116,height=116,bd=0,highlightthickness=0); jog.pack(side="left",padx=(0,12))
@@ -154,7 +157,21 @@ class DJStudio(tk.Tk):
    self.button(row2,t,lambda x=t,k=key:self.set_status("Deck "+k+" "+x+" control selected")).pack(side="left",padx=2)
   cue=self.frame(right); cue.pack(anchor="w",pady=4)
   for n in range(1,5): self.button(cue,"HOT CUE "+str(n),lambda k=key,x=n:self.set_status("Deck "+k+" hot cue "+str(x)+" selected")).pack(side="left",padx=2)
-  self.deck_ui[key]={"panel":p,"title":title,"time":time,"wave":wave,"jog":jog}
+  self.deck_ui[key]={"panel":p,"title":title,"time":time,"bpm":bpm,"wave":wave,"jog":jog}
+
+ def format_time(self,seconds):
+  seconds=max(0,int(seconds)); return "%02d:%02d"%(seconds//60,seconds%60)
+
+ def update_deck_displays(self):
+  for key in ("A","B"):
+   channel=self.deck_channels.get(key) if self.audio_ready else None
+   if channel and channel.get_busy() and self.deck_started[key] is not None:
+    elapsed=min(self.deck_duration[key],max(0,time.monotonic()-self.deck_started[key]))
+    left=max(0,self.deck_duration[key]-elapsed)
+    self.deck_ui[key]["time"].configure(text=self.format_time(elapsed)+" / "+self.format_time(self.deck_duration[key])+"  •  LEFT "+self.format_time(left))
+    if left<=0:
+     self.deck_started[key]=None; self.deck_play_button[key].configure(text="▶ PLAY")
+  self.after(250,self.update_deck_displays)
 
  def draw_wave(self,key):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["wave"]; cv.delete("all")
@@ -230,7 +247,11 @@ class DJStudio(tk.Tk):
   for i in self.table.get_children(): self.table.delete(i)
   for path in self.playlists.get(self.current_playlist,[]):
    name=os.path.basename(path)
-   if self.search.get().lower() in name.lower(): self.table.insert("","end",iid=path,values=(name,os.path.dirname(path)))
+   if self.search.get().lower() in name.lower():
+    length="—"
+    try: length=self.format_time(pygame.mixer.Sound(path).get_length())
+    except Exception: pass
+    self.table.insert("","end",iid=path,values=(name,"—",length,os.path.dirname(path)))
  def refresh_playlists(self):
   if not hasattr(self,"playlist_box"): return
   self.playlist_box.delete(0,"end")
@@ -263,10 +284,14 @@ class DJStudio(tk.Tk):
   path=self.selected()
   if not path: self.set_status("Select a track in the library first"); return
   self.stop_deck(key, announce=False)
-  self.deck_tracks[key]=path; self.deck_ui[key]["title"].configure(text=os.path.basename(path)); self.deck_ui[key]["time"].configure(text="00:00.0")
+  self.deck_tracks[key]=path; self.deck_started[key]=None
+  self.deck_ui[key]["title"].configure(text=os.path.basename(path)); self.deck_ui[key]["time"].configure(text="00:00 / 00:00  •  LEFT 00:00")
+  self.deck_duration[key]=0.0
   if self.audio_ready:
    try:
     self.deck_sounds[key]=pygame.mixer.Sound(path)
+    self.deck_duration[key]=self.deck_sounds[key].get_length()
+    self.deck_ui[key]["time"].configure(text="00:00 / "+self.format_time(self.deck_duration[key])+"  •  LEFT "+self.format_time(self.deck_duration[key]))
    except Exception as e:
     self.deck_sounds[key]=None
     self.set_status("Track loaded, but audio could not be opened: "+str(e))
@@ -291,6 +316,7 @@ class DJStudio(tk.Tk):
    except Exception as e:
     self.set_status("Cannot play this file: "+str(e)); return
   self.deck_channels[key].play(sound)
+  self.deck_started[key]=time.monotonic()
   if hasattr(self,"deck_play_button") and key in self.deck_play_button:
    self.deck_play_button[key].configure(text="■ STOP")
   self.set_status("Deck "+key+" playing: "+os.path.basename(self.deck_tracks[key]))
@@ -299,6 +325,7 @@ class DJStudio(tk.Tk):
   channel=self.deck_channels.get(key) if hasattr(self,"deck_channels") else None
   if channel:
    channel.stop()
+  self.deck_started[key]=None
   if hasattr(self,"deck_play_button") and key in self.deck_play_button:
    self.deck_play_button[key].configure(text="▶ PLAY")
   if announce:
