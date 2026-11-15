@@ -505,7 +505,7 @@ class DJStudio(tk.Tk):
     try:
      import librosa
      stretched=librosa.effects.time_stretch(y=source.T,rate=rate,axis=-1).T
-     self.audio_engine.set_stretched_audio(key,stretched)
+     if generation==self.keylock_generation[key]:self.audio_engine.set_stretched_audio(key,stretched)
      result=None
     except Exception as exc: result=str(exc)
     try:self.after(0,lambda:self.finish_keylock(key,generation,result))
@@ -520,8 +520,12 @@ class DJStudio(tk.Tk):
 
  def toggle_keylock(self,key):
   self.keylock_enabled[key]=not self.keylock_enabled[key]
+  self.keylock_generation[key]+=1
   self.keylock_buttons[key].configure(text="KEY LOCK "+("ON" if self.keylock_enabled[key] else "OFF"))
-  self.apply_pitch(key)
+  if self.keylock_enabled[key]:self.apply_pitch(key)
+  else:
+   self.audio_engine.restore_source_audio(key)
+   self.audio_engine.set_pitch(key,self.deck_pitch[key])
   self.set_status("Deck "+key+" key-lock "+("enabled" if self.keylock_enabled[key] else "disabled"))
 
  def adjust_pitch(self,key,delta):
