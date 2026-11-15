@@ -27,7 +27,7 @@ class DJStudio(tk.Tk):
   self.theme_name=tk.StringVar(value="VirtualDJ Black")
   self.queue=[]
   self.tracks=[]; self.playlists={"All Tracks":[]}; self.current_playlist="All Tracks"
-  self.deck_tracks={"A":None,"B":None}; self.cue_points={"A":[],"B":[]}
+  self.deck_tracks={"A":None,"B":None}; self.cue_points={"A":[],"B":[]}; self.sample_paths=[None]*8
   self.deck_started={"A":None,"B":None}; self.deck_duration={"A":0.0,"B":0.0}
   self.deck_sounds={"A":None,"B":None}; self.deck_channels={"A":None,"B":None}
   self.deck_cues={"A":{},"B":{}}; self.deck_play_offset={"A":0.0,"B":0.0}
@@ -153,7 +153,12 @@ class DJStudio(tk.Tk):
    b.grid(row=i//4,column=i%4,sticky="nsew",padx=3,pady=3)
    b.bind("<Button-3>",lambda e,n=i:self.stop_sample(n))
    self.sample_buttons.append(b)
-  self.sample_paths=[None]*8
+  for i,path in enumerate(self.sample_paths):
+   if path and os.path.isfile(path):
+    try:
+     self.audio_engine.load_sample(i,path)
+     self.sample_buttons[i].configure(text=os.path.splitext(os.path.basename(path))[0][:14])
+    except Exception: self.sample_paths[i]=None
   for i in range(4): pads.columnconfigure(i,weight=1)
   for i in range(2): pads.rowconfigure(i,weight=1)
   self.button(self.sampler_panel,"STOP ALL SAMPLES",self.audio_engine.stop_all_samples).pack(fill="x",pady=(4,0))
