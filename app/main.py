@@ -29,6 +29,7 @@ class DJStudio(tk.Tk):
   self.deck_sounds={"A":None,"B":None}; self.deck_channels={"A":None,"B":None}
   self.deck_cues={"A":{},"B":{}}; self.deck_play_offset={"A":0.0,"B":0.0}
   self.deck_loop_sound={"A":None,"B":None}; self.deck_loop_active={"A":False,"B":False}
+  self.deck_loop_beats={"A":4,"B":4}
   self.deck_playing_sound={"A":None,"B":None}
   self.deck_gain={"A":1.0,"B":1.0}; self.crossfade=0.0
   self.jog_drag={"A":None,"B":None}
@@ -172,7 +173,12 @@ class DJStudio(tk.Tk):
   row2=self.frame(right); row2.pack(fill="x",pady=4)
   for t in ("− PITCH","＋ PITCH","SYNC"):
    self.button(row2,t,lambda x=t,k=key:self.set_status("Deck "+k+" "+x+" is reserved for the beatmatching update")).pack(side="left",padx=2)
-  self.button(row2,"4 BEAT LOOP",lambda k=key:self.toggle_loop(k)).pack(side="left",padx=2)
+  self.button(row2,"− LOOP",lambda k=key:self.change_loop_beats(k,-1)).pack(side="left",padx=2)
+  self.loop_labels=self.loop_labels if hasattr(self,"loop_labels") else {}
+  loop_label=self.label(row2,"4 BEATS",font=("Segoe UI",8,"bold")); loop_label.pack(side="left",padx=3)
+  self.loop_labels[key]=loop_label
+  self.button(row2,"＋ LOOP",lambda k=key:self.change_loop_beats(k,1)).pack(side="left",padx=2)
+  self.button(row2,"LOOP ON/OFF",lambda k=key:self.toggle_loop(k)).pack(side="left",padx=2)
   cue=self.frame(right); cue.pack(anchor="w",pady=4)
   for n in range(1,5): self.button(cue,"HOT CUE "+str(n),lambda k=key,x=n:self.set_hot_cue(k,str(x))).pack(side="left",padx=2)
   self.deck_ui[key]={"panel":p,"title":title,"time":time,"bpm":bpm,"wave":wave,"jog":jog}
@@ -235,11 +241,12 @@ class DJStudio(tk.Tk):
   def worker():
    try:
     import librosa
-    audio,sr=librosa.load(path,sr=11025,mono=True,duration=180)
+    audio,sr=librosa.load(path,sr=8000,mono=True,duration=90)
     rms=librosa.feature.rms(y=audio,frame_length=1024,hop_length=512)[0]
     peak=float(max(rms)) if len(rms) else 0.0
     waveform=[float(v/peak) if peak else 0.0 for v in rms]
-    tempo,_=librosa.beat.beat_track(y=audio,sr=sr,units="frames")
+    onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=512)
+    tempo,_=librosa.beat.beat_track(onset_envelope=onset,sr=sr,hop_length=512,units="frames",trim=True)
     try: bpm=float(tempo[0])
     except (TypeError,IndexError): bpm=float(tempo)
     if not 50 <= bpm <= 220: bpm=None
@@ -553,6 +560,19 @@ class DJStudio(tk.Tk):
   self.deck_play_button[key].configure(text="■ STOP")
   self.draw_wave(key)
 
+ def change_loop_beats(self,key,direction):
+  sizes=(1,2,4,8,16,32)
+  current=self.deck_loop_beats.get(key,4)
+  index=sizes.index(current) if current in sizes else 2
+  index=max(0,min(len(sizes)-1,index+direction))
+  self.deck_loop_beats[key]=sizes[index]
+  if hasattr(self,"loop_labels") and key in self.loop_labels:
+   self.loop_labels[key].configure(text=str(sizes[index])+" BEATS")
+  if self.deck_loop_active.get(key):
+   self.toggle_loop(key)
+   self.toggle_loop(key)
+  self.set_status("Deck "+key+" loop length: "+str(sizes[index])+" beats")
+
  def toggle_loop(self,key):
   if not self.deck_tracks.get(key) or not self.deck_sounds.get(key):
    self.set_status("Load a track into Deck "+key+" first"); return
@@ -564,7 +584,7 @@ class DJStudio(tk.Tk):
   if not bpm or bpm<=0:
    self.set_status("A 4-beat loop needs a detected BPM first"); return
   start=self.current_position(key)
-  length=240.0/float(bpm)
+  length=(60.0/float(bpm))*self.deck_loop_beats.get(key,4)
   end=min(self.deck_duration[key],start+length)
   if end-start<length*0.8:
    start=max(0.0,self.deck_duration[key]-length); end=min(self.deck_duration[key],start+length)
