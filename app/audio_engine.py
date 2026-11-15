@@ -172,6 +172,14 @@ class AudioEngine:
             source = self.decks[deck]["source_audio"]
             return None if source is None else source.copy()
 
+    def restore_source_audio(self, deck):
+        with self.lock:
+            d = self.decks[deck]
+            if d["source_audio"] is not None:
+                d["audio"] = d["source_audio"]
+                d["position"] = min(d["position"], len(d["audio"]) / self.sample_rate)
+                self._reset_eq_state(deck)
+
     def set_stretched_audio(self, deck, data):
         with self.lock:
             d = self.decks[deck]
