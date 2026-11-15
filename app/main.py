@@ -463,6 +463,8 @@ class DJStudio(tk.Tk):
   self.stop_deck(key,announce=False);self.deck_tracks[key]=path;self.deck_started[key]=None
   try:self.deck_duration[key]=self.audio_engine.load(key,path);self.deck_sounds[key]=True
   except Exception as e:self.deck_sounds[key]=None;self.set_status("Audio file could not be loaded: "+str(e));return
+  self.deck_pitch[key]=0.0
+  if self.keylock_enabled.get(key):self.apply_pitch(key)
   self.deck_ui[key]["title"].configure(text=os.path.basename(path))
   self.deck_ui[key]["time"].configure(text="00:00 / "+self.format_time(self.deck_duration[key])+" • LEFT "+self.format_time(self.deck_duration[key]))
   self.deck_waveforms[key]=[];self.deck_bpms[key]=None;self.deck_play_offset[key]=0.0
