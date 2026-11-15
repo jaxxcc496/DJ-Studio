@@ -1,4 +1,5 @@
-import os, json, math, random
+import os, json, math, random, time
+import pygame
 import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog, messagebox
 
@@ -22,6 +23,15 @@ class DJStudio(tk.Tk):
   self.theme_name=tk.StringVar(value="Midnight")
   self.tracks=[]; self.playlists={"All Tracks":[]}; self.current_playlist="All Tracks"
   self.deck_tracks={"A":None,"B":None}; self.cue_points={"A":[],"B":[]}
+  self.deck_sounds={"A":None,"B":None}; self.deck_channels={"A":None,"B":None}
+  self.audio_ready=False
+  try:
+   pygame.mixer.init()
+   pygame.mixer.set_num_channels(8)
+   self.deck_channels={"A":pygame.mixer.Channel(0),"B":pygame.mixer.Channel(1)}
+   self.audio_ready=True
+  except Exception as e:
+   self.audio_error=str(e)
   self.loop_state={"A":False,"B":False}; self.fx_state={}
   self.status=tk.StringVar(value="WELCOME  •  Add music to your library to prepare a set")
   self.load_data()
@@ -106,7 +116,7 @@ class DJStudio(tk.Tk):
    b.grid(row=i//4,column=i%4,sticky="nsew",padx=3,pady=3)
   for i in range(4): pads.columnconfigure(i,weight=1)
   for i in range(2): pads.rowconfigure(i,weight=1)
-  self.statusbar=self.label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7); self.statusbar.pack(fill="x",pady=(8,0))
+  self.statusbar=tk.Label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7,bd=0); self.statusbar.pack(fill="x",pady=(8,0))
   self.refresh_playlists(); self.refresh_tracks()
 
  def build_deck(self,parent,key):
@@ -125,8 +135,8 @@ class DJStudio(tk.Tk):
   btns=self.frame(right); btns.pack(anchor="w",pady=2)
   self.button(btns,"LOAD",lambda k=key:self.load_to(k)).pack(side="left",padx=2)
   self.button(btns,"CUE",lambda k=key:self.set_status("Deck "+k+" cue point selected (audio cue not active)")).pack(side="left",padx=2)
-  self.button(btns,"▶ PLAY",lambda k=key:self.set_status("Deck "+k+": playback will be connected in the audio-engine stage")).pack(side="left",padx=2)
-  self.button(btns,"■ STOP",lambda k=key:self.set_status("Deck "+k+" stop requested (audio engine not connected)")).pack(side="left",padx=2)
+  self.button(btns,"▶ PLAY",lambda k=key:self.play_deck(k)).pack(side="left",padx=2)
+  self.button(btns,"■ STOP",lambda k=key:self.stop_deck(k)).pack(side="left",padx=2)
   row2=self.frame(right); row2.pack(fill="x",pady=4)
   for t in ("− PITCH","＋ PITCH","SYNC","4 BEAT LOOP"):
    self.button(row2,t,lambda x=t,k=key:self.set_status("Deck "+k+" "+x+" control selected")).pack(side="left",padx=2)
@@ -199,8 +209,37 @@ class DJStudio(tk.Tk):
  def load_to(self,key):
   path=self.selected()
   if not path: self.set_status("Select a track in the library first"); return
+  self.stop_deck(key, announce=False)
   self.deck_tracks[key]=path; self.deck_ui[key]["title"].configure(text=os.path.basename(path)); self.deck_ui[key]["time"].configure(text="00:00.0")
-  self.draw_wave(key); self.set_status(os.path.basename(path)+" loaded into Deck "+key+" — waveform and jogwheel are visual previews only")
+  if self.audio_ready:
+   try:
+    self.deck_sounds[key]=pygame.mixer.Sound(path)
+   except Exception as e:
+    self.deck_sounds[key]=None
+    self.set_status("Track loaded, but audio could not be opened: "+str(e))
+  self.draw_wave(key); self.set_status(os.path.basename(path)+" loaded into Deck "+key+" — press PLAY")
+ def play_deck(self,key):
+  if not self.audio_ready:
+   self.set_status("Audio device unavailable: "+getattr(self,"audio_error","unknown audio error")); return
+  sound=self.deck_sounds.get(key)
+  if sound is None:
+   path=self.deck_tracks.get(key)
+   if not path:
+    self.set_status("Load a track into Deck "+key+" first"); return
+   try:
+    sound=pygame.mixer.Sound(path); self.deck_sounds[key]=sound
+   except Exception as e:
+    self.set_status("Cannot play this file: "+str(e)); return
+  self.deck_channels[key].play(sound)
+  self.set_status("Deck "+key+" playing: "+os.path.basename(self.deck_tracks[key]))
+
+ def stop_deck(self,key,announce=True):
+  channel=self.deck_channels.get(key) if hasattr(self,"deck_channels") else None
+  if channel:
+   channel.stop()
+  if announce:
+   self.set_status("Deck "+key+" stopped")
+
  def add_to_playlist(self):
   p=self.selected()
   if not p: return
@@ -241,4 +280,9 @@ class DJStudio(tk.Tk):
   for child in w.winfo_children(): self.paint(child,c)
 
 if __name__=="__main__":
- DJStudio().mainloop()
+ app=DJStudio()
+ try:
+  app.mainloop()
+ finally:
+  try: pygame.mixer.quit()
+  except Exception: pass
