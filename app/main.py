@@ -27,6 +27,9 @@ class DJStudio(tk.Tk):
   self.deck_tracks={"A":None,"B":None}; self.cue_points={"A":[],"B":[]}
   self.deck_started={"A":None,"B":None}; self.deck_duration={"A":0.0,"B":0.0}
   self.deck_sounds={"A":None,"B":None}; self.deck_channels={"A":None,"B":None}
+  self.deck_cues={"A":{},"B":{}}; self.deck_play_offset={"A":0.0,"B":0.0}
+  self.deck_loop_sound={"A":None,"B":None}; self.deck_loop_active={"A":False,"B":False}
+  self.deck_playing_sound={"A":None,"B":None}
   self.analysis_cache={}; self.deck_waveforms={"A":[],"B":[]}; self.deck_bpms={"A":None,"B":None}
   self.audio_ready=False
   try:
@@ -148,16 +151,17 @@ class DJStudio(tk.Tk):
   right=self.frame(row); right.pack(side="left",fill="both",expand=True)
   btns=self.frame(right); btns.pack(anchor="w",pady=2)
   self.button(btns,"LOAD",lambda k=key:self.load_to(k)).pack(side="left",padx=2)
-  self.button(btns,"CUE",lambda k=key:self.set_status("Deck "+k+" cue point selected (audio cue not active)")).pack(side="left",padx=2)
+  self.button(btns,"CUE",lambda k=key:self.set_hot_cue(k,"CUE")).pack(side="left",padx=2)
   self.deck_play_button=self.deck_play_button if hasattr(self,"deck_play_button") else {}
   play_btn=self.button(btns,"▶ PLAY",lambda k=key:self.toggle_deck(k))
   play_btn.pack(side="left",padx=2)
   self.deck_play_button[key]=play_btn
   row2=self.frame(right); row2.pack(fill="x",pady=4)
-  for t in ("− PITCH","＋ PITCH","SYNC","4 BEAT LOOP"):
-   self.button(row2,t,lambda x=t,k=key:self.set_status("Deck "+k+" "+x+" control selected")).pack(side="left",padx=2)
+  for t in ("− PITCH","＋ PITCH","SYNC"):
+   self.button(row2,t,lambda x=t,k=key:self.set_status("Deck "+k+" "+x+" is reserved for the beatmatching update")).pack(side="left",padx=2)
+  self.button(row2,"4 BEAT LOOP",lambda k=key:self.toggle_loop(k)).pack(side="left",padx=2)
   cue=self.frame(right); cue.pack(anchor="w",pady=4)
-  for n in range(1,5): self.button(cue,"HOT CUE "+str(n),lambda k=key,x=n:self.set_status("Deck "+k+" hot cue "+str(x)+" selected")).pack(side="left",padx=2)
+  for n in range(1,5): self.button(cue,"HOT CUE "+str(n),lambda k=key,x=n:self.set_hot_cue(k,str(x))).pack(side="left",padx=2)
   self.deck_ui[key]={"panel":p,"title":title,"time":time,"bpm":bpm,"wave":wave,"jog":jog}
 
  def format_time(self,seconds):
@@ -169,7 +173,16 @@ class DJStudio(tk.Tk):
    if channel and channel.get_busy() and self.deck_started[key] is not None:
     elapsed=min(self.deck_duration[key],max(0,time.monotonic()-self.deck_started[key]))
     left=max(0,self.deck_duration[key]-elapsed)
+    if self.deck_loop_active.get(key):
+     loop_sound=self.deck_loop_sound.get(key)
+     if loop_sound and not channel.get_busy(): self.deck_started[key]=None; self.deck_loop_active[key]=False
+    elapsed=min(self.deck_duration[key],max(0,self.deck_play_offset[key]+time.monotonic()-self.deck_started[key]))
+    if self.deck_loop_active.get(key) and self.deck_loop_sound.get(key):
+     loop_len=self.deck_loop_sound[key].get_length()
+     if loop_len>0: elapsed=self.deck_play_offset[key]+((time.monotonic()-self.deck_started[key])%loop_len)
+    left=max(0,self.deck_duration[key]-elapsed)
     self.deck_ui[key]["time"].configure(text=self.format_time(elapsed)+" / "+self.format_time(self.deck_duration[key])+"  •  LEFT "+self.format_time(left))
+    self.draw_wave(key)
     if left<=0:
      self.deck_started[key]=None; self.deck_play_button[key].configure(text="▶ PLAY")
   self.after(250,self.update_deck_displays)
@@ -188,7 +201,20 @@ class DJStudio(tk.Tk):
    cv.create_text(8,6,text="ANALYSED AUDIO",anchor="nw",fill=c["muted"],font=("Segoe UI",7,"bold"))
   else:
    cv.create_text(8,7,text="ANALYSING AUDIO WHEN TRACK IS LOADED",anchor="nw",fill=c["muted"],font=("Segoe UI",7,"bold"))
-  cv.create_line(w*.52,4,w*.52,h-4,fill=c["hot"],width=2)
+  duration=self.deck_duration.get(key,0.0) or 0.0
+  pos=0.0
+  if self.deck_started.get(key) is not None:
+   pos=self.deck_play_offset.get(key,0.0)+max(0,time.monotonic()-self.deck_started[key])
+   if self.deck_loop_active.get(key) and self.deck_loop_sound.get(key):
+    loop_len=self.deck_loop_sound[key].get_length()
+    if loop_len>0: pos=self.deck_play_offset.get(key,0.0)+(pos-self.deck_play_offset.get(key,0.0))%loop_len
+  for name,stamp in self.deck_cues.get(key,{}).items():
+   if duration>0:
+    cx=max(0,min(w,int(stamp/duration*w)))
+    cv.create_line(cx,2,cx,h-2,fill=c["hot"],width=1)
+  if duration>0:
+   px=max(0,min(w,int(pos/duration*w)))
+   cv.create_line(px,1,px,h-1,fill="#ffffff",width=2)
 
  def analyse_track(self,path,key):
   if path in self.analysis_cache:
@@ -364,17 +390,100 @@ class DJStudio(tk.Tk):
     sound=pygame.mixer.Sound(path); self.deck_sounds[key]=sound
    except Exception as e:
     self.set_status("Cannot play this file: "+str(e)); return
+  start=max(0.0,min(self.deck_play_offset.get(key,0.0),max(0.0,self.deck_duration.get(key,0.0)-0.05)))
+  sound=self.make_audio_slice(key,start,None)
+  if sound is None: sound=self.deck_sounds[key]
+  self.deck_playing_sound[key]=sound
   self.deck_channels[key].play(sound)
+  self.deck_play_offset[key]=start
   self.deck_started[key]=time.monotonic()
   if hasattr(self,"deck_play_button") and key in self.deck_play_button:
    self.deck_play_button[key].configure(text="■ STOP")
   self.set_status("Deck "+key+" playing: "+os.path.basename(self.deck_tracks[key]))
+
+ def make_audio_slice(self,key,start,end):
+  source=self.deck_sounds.get(key)
+  if source is None: return None
+  try:
+   import pygame.sndarray
+   import numpy as np
+   rate,fmt,channels=pygame.mixer.get_init()
+   samples=pygame.sndarray.array(source)
+   first=max(0,int(start*rate))
+   last=len(samples) if end is None else min(len(samples),int(end*rate))
+   if last<=first: return None
+   return pygame.sndarray.make_sound(np.ascontiguousarray(samples[first:last]))
+  except Exception as e:
+   self.set_status("Cue/loop audio slice unavailable: "+str(e)[:90])
+   return None
+
+ def current_position(self,key):
+  if self.deck_started.get(key) is None: return self.deck_play_offset.get(key,0.0)
+  pos=self.deck_play_offset.get(key,0.0)+max(0,time.monotonic()-self.deck_started[key])
+  if self.deck_loop_active.get(key):
+   snd=self.deck_loop_sound.get(key)
+   if snd:
+    length=snd.get_length()
+    if length>0: pos=self.deck_play_offset[key]+(pos-self.deck_play_offset[key])%length
+  return min(self.deck_duration.get(key,0.0),pos)
+
+ def set_hot_cue(self,key,name):
+  if not self.deck_tracks.get(key):
+   self.set_status("Load a track into Deck "+key+" first"); return
+  if name in self.deck_cues[key]:
+   self.deck_play_offset[key]=self.deck_cues[key][name]
+   self.deck_loop_active[key]=False; self.deck_loop_sound[key]=None
+   self.play_from_position(key,self.deck_play_offset[key])
+   self.set_status("Deck "+key+" jumped to cue "+name)
+  else:
+   self.deck_cues[key][name]=self.current_position(key)
+   self.draw_wave(key)
+   self.set_status("Deck "+key+" cue "+name+" saved at "+self.format_time(self.deck_cues[key][name]))
+
+ def play_from_position(self,key,position):
+  if not self.audio_ready or not self.deck_sounds.get(key): return
+  clip=self.make_audio_slice(key,position,None)
+  if clip is None:
+   self.set_status("Could not seek to cue point on this audio file"); return
+  self.deck_channels[key].stop()
+  self.deck_loop_active[key]=False; self.deck_loop_sound[key]=None
+  self.deck_playing_sound[key]=clip
+  self.deck_channels[key].play(clip)
+  self.deck_play_offset[key]=position; self.deck_started[key]=time.monotonic()
+  self.deck_play_button[key].configure(text="■ STOP")
+  self.draw_wave(key)
+
+ def toggle_loop(self,key):
+  if not self.deck_tracks.get(key) or not self.deck_sounds.get(key):
+   self.set_status("Load a track into Deck "+key+" first"); return
+  if self.deck_loop_active.get(key):
+   self.deck_loop_active[key]=False; self.deck_loop_sound[key]=None
+   self.deck_channels[key].stop(); self.deck_started[key]=None
+   self.set_status("Deck "+key+" 4-beat loop disabled"); return
+  bpm=self.deck_bpms.get(key)
+  if not bpm or bpm<=0:
+   self.set_status("A 4-beat loop needs a detected BPM first"); return
+  start=self.current_position(key)
+  length=240.0/float(bpm)
+  end=min(self.deck_duration[key],start+length)
+  if end-start<length*0.8:
+   start=max(0.0,self.deck_duration[key]-length); end=min(self.deck_duration[key],start+length)
+  loop=self.make_audio_slice(key,start,end)
+  if loop is None:
+   self.set_status("Could not create the loop for this audio file"); return
+  self.deck_channels[key].stop()
+  self.deck_loop_sound[key]=loop; self.deck_loop_active[key]=True
+  self.deck_playing_sound[key]=loop; self.deck_channels[key].play(loop,loops=-1)
+  self.deck_play_offset[key]=start; self.deck_started[key]=time.monotonic()
+  self.deck_play_button[key].configure(text="■ STOP")
+  self.set_status("Deck "+key+" 4-beat loop active")
 
  def stop_deck(self,key,announce=True):
   channel=self.deck_channels.get(key) if hasattr(self,"deck_channels") else None
   if channel:
    channel.stop()
   self.deck_started[key]=None
+  self.deck_play_offset[key]=0.0; self.deck_loop_active[key]=False; self.deck_loop_sound[key]=None
   if hasattr(self,"deck_play_button") and key in self.deck_play_button:
    self.deck_play_button[key].configure(text="▶ PLAY")
   if announce:
