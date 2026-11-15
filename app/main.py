@@ -1,5 +1,8 @@
 import os, json, math, random, time, threading
-from audio_engine import AudioEngine
+try:
+ from .audio_engine import AudioEngine
+except ImportError:
+ from audio_engine import AudioEngine
 import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog, messagebox
 
