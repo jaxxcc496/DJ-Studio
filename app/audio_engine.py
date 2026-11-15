@@ -48,7 +48,7 @@ class AudioEngine:
         return {
             "audio": None, "position": 0.0, "playing": False, "pitch": 1.0,
             "gain": 1.0, "eq": {"low": 0.0, "mid": 0.0, "high": 0.0},
-            "loop": None, "path": None,
+            "loop": None, "path": None, "scratch_rate": None,
         }
 
     @staticmethod
@@ -167,6 +167,14 @@ class AudioEngine:
         with self.lock:
             self.decks[deck]["pitch"] = float(np.clip(1.0 + percent / 100.0, 0.5, 1.5))
 
+    def set_scratch_rate(self, deck, rate):
+        with self.lock:
+            self.decks[deck]["scratch_rate"] = float(np.clip(rate, -8.0, 8.0))
+
+    def end_scratch(self, deck):
+        with self.lock:
+            self.decks[deck]["scratch_rate"] = None
+
     def set_gain(self, deck, value):
         with self.lock:
             self.decks[deck]["gain"] = float(np.clip(value, 0.0, 1.5))
@@ -254,14 +262,14 @@ class AudioEngine:
                 if not d["playing"] or audio is None:
                     continue
                 length = len(audio)
-                step = d["pitch"]
+                step = d["scratch_rate"] if d["scratch_rate"] is not None else d["pitch"]
                 indices = d["position"] * self.sample_rate + step * np.arange(frames)
                 if d["loop"] is not None:
                     start, end = d["loop"]
                     loop_start = start * self.sample_rate
                     loop_length = max(1.0, (end - start) * self.sample_rate)
                     indices = loop_start + np.mod(indices - loop_start, loop_length)
-                valid = indices < length
+                valid = (indices >= 0) & (indices < length)
                 if not np.any(valid):
                     d["playing"] = False
                     continue
@@ -274,7 +282,9 @@ class AudioEngine:
                 block = self._process_effects(key, block)
                 outdata += block * (d["gain"] * deck_levels[key])
                 d["position"] += frames * step / self.sample_rate
-                if d["loop"] is not None and d["position"] >= d["loop"][1]:
+                if d["scratch_rate"] is not None:
+                    d["position"] = float(np.clip(d["position"], 0.0, length / self.sample_rate))
+                elif d["loop"] is not None and d["position"] >= d["loop"][1]:
                     start, end = d["loop"]
                     d["position"] = start + (d["position"] - start) % (end - start)
                 elif d["position"] >= length / self.sample_rate:
