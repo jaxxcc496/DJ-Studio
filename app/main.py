@@ -1,4 +1,4 @@
-import os, json, math, random, time
+import os, json, math, random, time, threading
 import pygame
 import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog, messagebox
@@ -27,6 +27,7 @@ class DJStudio(tk.Tk):
   self.deck_tracks={"A":None,"B":None}; self.cue_points={"A":[],"B":[]}
   self.deck_started={"A":None,"B":None}; self.deck_duration={"A":0.0,"B":0.0}
   self.deck_sounds={"A":None,"B":None}; self.deck_channels={"A":None,"B":None}
+  self.analysis_cache={}; self.deck_waveforms={"A":[],"B":[]}; self.deck_bpms={"A":None,"B":None}
   self.audio_ready=False
   try:
    pygame.mixer.init()
@@ -177,12 +178,56 @@ class DJStudio(tk.Tk):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["wave"]; cv.delete("all")
   w=max(cv.winfo_width(),420); h=64; mid=h//2
   cv.create_rectangle(0,0,w,h,fill=c["panel"],outline="")
-  rnd=random.Random(12 if key=="A" else 28)
-  for x in range(0,w,3):
-   amp=rnd.randint(5,26)
-   cv.create_line(x,mid-amp,x,mid+amp,fill=c["accent"] if x<w*.52 else c["muted"],width=2)
+  values=self.deck_waveforms.get(key,[])
+  if values:
+   step=max(1,len(values)//max(1,w//3))
+   for x in range(0,w,3):
+    idx=min(len(values)-1,int(x/max(1,w)*len(values)))
+    amp=max(2,min(28,int(values[idx]*28)))
+    cv.create_line(x,mid-amp,x,mid+amp,fill=c["accent"],width=2)
+   cv.create_text(8,6,text="ANALYSED AUDIO",anchor="nw",fill=c["muted"],font=("Segoe UI",7,"bold"))
+  else:
+   cv.create_text(8,7,text="ANALYSING AUDIO WHEN TRACK IS LOADED",anchor="nw",fill=c["muted"],font=("Segoe UI",7,"bold"))
   cv.create_line(w*.52,4,w*.52,h-4,fill=c["hot"],width=2)
-  cv.create_text(8,7,text="WAVEFORM DISPLAY MOCKUP",anchor="nw",fill=c["muted"],font=("Segoe UI",7,"bold"))
+
+ def analyse_track(self,path,key):
+  if path in self.analysis_cache:
+   self.apply_analysis(path,key,*self.analysis_cache[path]); return
+  def worker():
+   try:
+    import librosa
+    audio,sr=librosa.load(path,sr=11025,mono=True,duration=180)
+    rms=librosa.feature.rms(y=audio,frame_length=1024,hop_length=512)[0]
+    peak=float(max(rms)) if len(rms) else 0.0
+    waveform=[float(v/peak) if peak else 0.0 for v in rms]
+    tempo,_=librosa.beat.beat_track(y=audio,sr=sr,units="frames")
+    try: bpm=float(tempo[0])
+    except (TypeError,IndexError): bpm=float(tempo)
+    if not 50 <= bpm <= 220: bpm=None
+    result=(waveform,bpm)
+   except Exception as e:
+    result=([],None)
+    error=str(e)
+   else: error=None
+   self.analysis_cache[path]=result
+   try: self.after(0,lambda:self.apply_analysis(path,key,*result,error=error))
+   except Exception: pass
+  threading.Thread(target=worker,daemon=True).start()
+
+ def apply_analysis(self,path,key,waveform,bpm,error=None):
+  if self.deck_tracks.get(key)==path:
+   self.deck_waveforms[key]=waveform
+   self.deck_bpms[key]=bpm
+   self.deck_ui[key]["bpm"].configure(text=("BPM  %.1f"%bpm) if bpm else "BPM  not detected")
+   self.draw_wave(key)
+  if error:
+   self.set_status("Audio analysis unavailable for "+os.path.basename(path)+": "+error[:100])
+  else:
+   self.set_status("Audio waveform analysed: "+os.path.basename(path))
+  if hasattr(self,"table"):
+   for item in self.table.get_children():
+    if self.table.item(item,"values") and item==path:
+     vals=list(self.table.item(item,"values")); vals[1]=("%.1f"%bpm) if bpm else "—"; self.table.item(item,values=vals)
 
  def draw_jog(self,key):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["jog"]; cv.delete("all")
@@ -251,7 +296,8 @@ class DJStudio(tk.Tk):
     length="—"
     try: length=self.format_time(pygame.mixer.Sound(path).get_length())
     except Exception: pass
-    self.table.insert("","end",iid=path,values=(name,"—",length,os.path.dirname(path)))
+    bpm=self.analysis_cache.get(path,([],None))[1]
+    self.table.insert("","end",iid=path,values=(name,("%.1f"%bpm) if bpm else "—",length,os.path.dirname(path)))
  def refresh_playlists(self):
   if not hasattr(self,"playlist_box"): return
   self.playlist_box.delete(0,"end")
@@ -295,7 +341,10 @@ class DJStudio(tk.Tk):
    except Exception as e:
     self.deck_sounds[key]=None
     self.set_status("Track loaded, but audio could not be opened: "+str(e))
-  self.draw_wave(key); self.set_status(os.path.basename(path)+" loaded into Deck "+key+" — press PLAY")
+  self.deck_waveforms[key]=[]; self.deck_bpms[key]=None
+  self.deck_ui[key]["bpm"].configure(text="BPM  analysing…")
+  self.draw_wave(key); self.analyse_track(path,key)
+  self.set_status(os.path.basename(path)+" loaded into Deck "+key+" — press PLAY")
  def toggle_deck(self,key):
   channel=self.deck_channels.get(key) if self.audio_ready else None
   if channel and channel.get_busy():
