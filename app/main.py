@@ -297,6 +297,7 @@ class DJStudio(tk.Tk):
   def worker():
    try:
     import librosa
+    import numpy as np
     audio,sr=librosa.load(path,sr=8000,mono=True)
     rms=librosa.feature.rms(y=audio,frame_length=1024,hop_length=512)[0]
     peak=float(max(rms)) if len(rms) else 0.0
