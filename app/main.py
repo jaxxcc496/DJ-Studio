@@ -35,7 +35,7 @@ class DJStudio(tk.Tk):
   self.deck_loop_beats={"A":4,"B":4}
   self.deck_playing_sound={"A":None,"B":None}
   self.deck_gain={"A":1.0,"B":1.0}; self.crossfade=0.0
-  self.jog_drag={"A":None,"B":None}
+  self.jog_drag={"A":None,"B":None}; self.midi_input=None; self.midi_map={}; self.midi_learn_target=None
   self.analysis_cache={}; self.deck_waveforms={"A":[],"B":[]}; self.deck_bpms={"A":None,"B":None}
   self.audio_engine=AudioEngine()
   self.audio_ready=self.audio_engine.start()
@@ -50,7 +50,7 @@ class DJStudio(tk.Tk):
  def load_data(self):
   try:
    with open(DATA_FILE,"r",encoding="utf-8") as f:
-    d=json.load(f); self.tracks=d.get("tracks",[]); self.playlists=d.get("playlists",{"All Tracks":[]}); self.sample_paths=d.get("sample_paths",[None]*8)
+    d=json.load(f); self.tracks=d.get("tracks",[]); self.playlists=d.get("playlists",{"All Tracks":[]}); self.sample_paths=d.get("sample_paths",[None]*8); self.midi_map=d.get("midi_map",{})
     self.theme_name.set(d.get("theme","VirtualDJ Black"))
     if "All Tracks" not in self.playlists: self.playlists["All Tracks"]=list(self.tracks)
    self.current_playlist="All Tracks"
@@ -59,7 +59,7 @@ class DJStudio(tk.Tk):
 
  def save_data(self):
   try:
-   with open(DATA_FILE,"w",encoding="utf-8") as f: json.dump({"tracks":self.tracks,"playlists":self.playlists,"theme":self.theme_name.get(),"sample_paths":getattr(self,"sample_paths",[None]*8)},f,indent=2)
+   with open(DATA_FILE,"w",encoding="utf-8") as f: json.dump({"tracks":self.tracks,"playlists":self.playlists,"theme":self.theme_name.get(),"sample_paths":getattr(self,"sample_paths",[None]*8),"midi_map":getattr(self,"midi_map",{})},f,indent=2)
    self.set_status("Library and playlists saved on this computer")
   except Exception as e: self.set_status("Could not save library: "+str(e))
 
@@ -78,6 +78,7 @@ class DJStudio(tk.Tk):
   self.theme_var=self.theme_name
   self.theme_box=ttk.Combobox(self.top,textvariable=self.theme_var,values=list(THEMES),state="readonly",width=17); self.theme_box.pack(side="right",padx=5)
   self.theme_box.bind("<<ComboboxSelected>>",lambda e:self.apply_theme())
+  self.midi_btn=self.button(self.top,"MIDI",self.open_midi); self.midi_btn.pack(side="right",padx=(8,2))
   self.settings_btn=self.button(self.top,"SETTINGS",self.open_settings); self.settings_btn.pack(side="right",padx=(8,2))
   self.theme_label=self.label(self.top,text="THEME",font=("Segoe UI",8,"bold")); self.theme_label.pack(side="right",padx=6)
 
@@ -98,6 +99,7 @@ class DJStudio(tk.Tk):
   self.button(self.sidebar,"RENAME",self.rename_playlist).pack(fill="x",pady=3)
   self.button(self.sidebar,"DELETE",self.delete_playlist).pack(fill="x",pady=3)
   self.button(self.sidebar,"SAVE LIBRARY",self.save_data).pack(fill="x",pady=(12,3))
+  self.button(self.sidebar,"MIDI LEARN",self.midi_learn_window).pack(fill="x",pady=3)
   self.label(self.sidebar,"UP NEXT",font=("Segoe UI",10,"bold")).pack(anchor="w",pady=(18,6))
   self.queue_box=tk.Listbox(self.sidebar,bd=0,highlightthickness=0,activestyle="none",font=("Segoe UI",9),height=7,exportselection=False)
   self.queue_box.pack(fill="both",expand=False)
@@ -501,6 +503,71 @@ class DJStudio(tk.Tk):
   self.crossfade=max(-1.0,min(1.0,float(value)/100.0));self.audio_engine.set_crossfade(self.crossfade)
   self.set_status("Crossfader: "+str(int(float(value))))
 
+ def open_midi(self):
+  try:
+   import pygame.midi
+   pygame.midi.init()
+   devices=[]
+   for i in range(pygame.midi.get_count()):
+    info=pygame.midi.get_device_info(i)
+    if info and info[2]: devices.append((i,info[1].decode(errors="replace")))
+   if not devices:
+    messagebox.showinfo("MIDI","No MIDI input device detected. Connect your controller and try again.")
+    return
+   choice=simpledialog.askinteger("MIDI input","Choose input device number:\n"+ "\\n".join(str(i)+" — "+name for i,name in devices),minvalue=0,maxvalue=pygame.midi.get_count()-1)
+   if choice is None:return
+   if self.midi_input:
+    self.midi_input.close();self.midi_input=None
+   self.midi_input=pygame.midi.Input(choice)
+   self.set_status("MIDI input connected: "+dict(devices).get(choice,"device "+str(choice)))
+   self.after(10,self.poll_midi)
+  except Exception as e:
+   messagebox.showerror("MIDI",str(e)+"\\nCheck that pygame and your controller driver are installed.")
+
+ def poll_midi(self):
+  if not self.winfo_exists():return
+  if self.midi_input:
+   try:
+    if self.midi_input.poll():
+     for event in self.midi_input.read(64):
+      data=event[0]; status,number,value=data[0],data[1],data[2]
+      kind=status & 0xF0
+      if kind not in (0x80,0x90,0xB0):continue
+      if kind==0x80 or (kind==0x90 and value==0):continue
+      key=str(kind)+":"+str(number)
+      if self.midi_learn_target:
+       self.midi_map[key]=self.midi_learn_target
+       self.midi_learn_target=None;self.save_data()
+       self.set_status("MIDI control mapped: "+key)
+      else:
+       target=self.midi_map.get(key)
+       if target:self.apply_midi_control(target,value/127.0)
+   except Exception as e:
+    self.set_status("MIDI input error: "+str(e)[:90])
+    self.midi_input=None
+  self.after(10,self.poll_midi)
+
+ def apply_midi_control(self,target,value):
+  if target=="crossfade":self.set_crossfade(value*200-100)
+  elif target.startswith("gain_"):self.set_deck_gain(target[-1],value*100)
+  elif target.startswith("pitch_"):self.deck_pitch[target[-1]]=(value-.5)*60;self.audio_engine.set_pitch(target[-1],self.deck_pitch[target[-1]])
+  elif target.startswith("eq_"):
+   _,band,deck=target.split("_");self.audio_engine.set_eq(deck,band,value*2-1)
+  elif target.startswith("play_"):
+   deck=target[-1]
+   if value>.5 and not self.audio_engine.decks[deck]["playing"]:self.play_deck(deck)
+
+ def learn_midi(self,target):
+  self.midi_learn_target=target
+  self.set_status("Move or press the MIDI control for "+target+" now")
+
+ def midi_learn_window(self):
+  win=tk.Toplevel(self);win.title("MIDI learn");win.geometry("390x430")
+  self.label(win,"MOVE A CONTROLLER TO MAP IT",font=("Segoe UI",11,"bold")).pack(anchor="w",padx=12,pady=12)
+  targets=[("Crossfader","crossfade"),("Gain Deck A","gain_A"),("Gain Deck B","gain_B"),("Pitch Deck A","pitch_A"),("Pitch Deck B","pitch_B"),("LOW A","eq_low_A"),("MID A","eq_mid_A"),("HIGH A","eq_high_A"),("LOW B","eq_low_B"),("MID B","eq_mid_B"),("HIGH B","eq_high_B")]
+  for label,target in targets:
+   self.button(win,"LEARN  "+label,lambda t=target:self.learn_midi(t)).pack(fill="x",padx=12,pady=2)
+
  def toggle_effect(self,key,effect):
   enabled=not self.audio_engine.effects[key][effect]
   self.audio_engine.set_effect(key,effect,enabled)
@@ -511,22 +578,31 @@ class DJStudio(tk.Tk):
  def jog_start(self,key,event):
   if not self.deck_tracks.get(key):
    self.set_status("Load a track into Deck "+key+" before using the jogwheel"); return
-  self.jog_drag[key]={"x":event.x,"position":self.current_position(key),"was_playing":bool(self.deck_started.get(key) is not None)}
-  self.set_status("Deck "+key+" jog: drag left or right to seek")
+  self.jog_drag[key]={"x":event.x,"last_x":event.x,"last_time":time.monotonic(),"position":self.current_position(key),"was_playing":bool(self.deck_started.get(key) is not None)}
+  self.audio_engine.play(key)
+  self.audio_engine.set_scratch_rate(key,0.0)
+  self.set_status("Deck "+key+" scratch")
 
  def jog_move(self,key,event):
   state=self.jog_drag.get(key)
   if not state:return
-  p=max(0,min(self.deck_duration[key],state["position"]+(event.x-state["x"])*.025))
-  self.audio_engine.seek(key,p);self.deck_play_offset[key]=p;self.draw_wave(key)
+  now=time.monotonic(); dx=event.x-state["last_x"]; dt=max(0.004,now-state["last_time"])
+  rate=(dx*0.025/dt)
+  self.audio_engine.set_scratch_rate(key,rate)
+  state["last_x"]=event.x;state["last_time"]=now
+  self.deck_play_offset[key]=self.current_position(key);self.draw_wave(key)
 
  def jog_end(self,key,event):
   state=self.jog_drag.get(key)
   if not state:return
   p=self.current_position(key)
-  if state["was_playing"]:self.audio_engine.play(key);self.deck_started[key]=time.monotonic();self.deck_play_button[key].configure(text="■ STOP")
-  else:self.deck_started[key]=None
-  self.jog_drag[key]=None;self.set_status("Deck "+key+" seek: "+self.format_time(p))
+  self.audio_engine.end_scratch(key)
+  if state["was_playing"]:
+   self.audio_engine.play(key);self.deck_started[key]=time.monotonic();self.deck_play_button[key].configure(text="■ STOP")
+  else:
+   self.audio_engine.pause(key);self.deck_started[key]=None
+  self.deck_play_offset[key]=p
+  self.jog_drag[key]=None;self.set_status("Deck "+key+" scratch ended at "+self.format_time(p))
 
  def play_deck(self,key):
   if not self.audio_ready:self.set_status("Audio output unavailable: "+getattr(self,"audio_error","unknown"));return
