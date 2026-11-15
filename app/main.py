@@ -40,7 +40,7 @@ class DJStudio(tk.Tk):
   self.audio_engine=AudioEngine()
   self.audio_ready=self.audio_engine.start()
   if not self.audio_ready:self.audio_error=self.audio_engine.error or "Audio output unavailable"
-  self.deck_pitch={"A":0.0,"B":0.0}
+  self.deck_pitch={"A":0.0,"B":0.0}; self.keylock_enabled={"A":False,"B":False}; self.keylock_generation={"A":0,"B":0}
   self.loop_state={"A":False,"B":False}; self.fx_state={}
   self.status=tk.StringVar(value="WELCOME  •  Add music to your library to prepare a set")
   self.load_data()
@@ -199,6 +199,9 @@ class DJStudio(tk.Tk):
   self.fx_buttons=self.fx_buttons if hasattr(self,"fx_buttons") else {}
   fxrow=self.frame(right); fxrow.pack(anchor="w",pady=2)
   self.fx_buttons[key]={}
+  self.keylock_buttons=self.keylock_buttons if hasattr(self,"keylock_buttons") else {}
+  keybtn=self.button(fxrow,"KEY LOCK OFF",lambda k=key:self.toggle_keylock(k))
+  keybtn.pack(side="left",padx=2); self.keylock_buttons[key]=keybtn
   for effect in ("filter","echo"):
    btn=self.button(fxrow,effect.upper()+" OFF",lambda k=key,x=effect:self.toggle_effect(k,x))
    btn.pack(side="left",padx=2)
@@ -491,9 +494,40 @@ class DJStudio(tk.Tk):
   if abs(pct)>30:self.set_status("SYNC target exceeds ±30%");return
   self.deck_pitch[key]=pct;self.audio_engine.set_pitch(key,pct);self.set_status("Deck "+key+" synced to %.1f BPM"%target)
 
+ def apply_pitch(self,key):
+  if self.keylock_enabled.get(key):
+   self.keylock_generation[key]+=1; generation=self.keylock_generation[key]
+   source=self.audio_engine.source_audio(key)
+   if source is None:return
+   rate=1.0+self.deck_pitch[key]/100.0
+   self.set_status("Deck "+key+" key-lock processing…")
+   def worker():
+    try:
+     import librosa
+     stretched=librosa.effects.time_stretch(y=source.T,rate=rate,axis=-1).T
+     self.audio_engine.set_stretched_audio(key,stretched)
+     result=None
+    except Exception as exc: result=str(exc)
+    try:self.after(0,lambda:self.finish_keylock(key,generation,result))
+    except Exception:pass
+   threading.Thread(target=worker,daemon=True).start()
+  else:self.audio_engine.set_pitch(key,self.deck_pitch[key])
+
+ def finish_keylock(self,key,generation,error):
+  if generation!=self.keylock_generation[key]:return
+  if error:self.set_status("Key-lock failed: "+error[:110])
+  else:self.set_status("Deck "+key+" key-lock processed at "+("%+.1f%%"%self.deck_pitch[key]))
+
+ def toggle_keylock(self,key):
+  self.keylock_enabled[key]=not self.keylock_enabled[key]
+  self.keylock_buttons[key].configure(text="KEY LOCK "+("ON" if self.keylock_enabled[key] else "OFF"))
+  self.apply_pitch(key)
+  self.set_status("Deck "+key+" key-lock "+("enabled" if self.keylock_enabled[key] else "disabled"))
+
  def adjust_pitch(self,key,delta):
   self.deck_pitch[key]=max(-30.0,min(30.0,self.deck_pitch.get(key,0.0)+delta))
-  self.audio_engine.set_pitch(key,self.deck_pitch[key]);self.set_status("Deck "+key+" pitch: %+.1f%%"%self.deck_pitch[key])
+  self.apply_pitch(key)
+  self.set_status("Deck "+key+" pitch: %+.1f%%"%self.deck_pitch[key])
 
  def set_eq_control(self,name,value):
   band="low" if "LOW" in name else ("mid" if "MID" in name else "high")
