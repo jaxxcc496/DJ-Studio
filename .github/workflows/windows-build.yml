@@ -1,0 +1,26 @@
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tool
+        run: python -m pip install --upgrade pip pyinstaller
+      - name: Build DJ Studio
+        run: pyinstaller --noconfirm --clean --windowed --name DJ-Studio app/main.py
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJ-Studio-Windows
+          path: dist/DJ-Studio/
