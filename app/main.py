@@ -133,9 +133,9 @@ class DJStudio(tk.Tk):
    if name=="GAIN A":
     sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
    elif name=="GAIN B":
-    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="B":self.set_deck_gain(k,v)); sc.set(0); sc.pack()
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="B":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
    elif name=="CROSSFADER":
-    sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=100,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(0); sc.pack()
+    sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=100,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(100); sc.pack()
    else:
     sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_eq_control(n,v)); sc.set(50); sc.pack()
     self.eq_controls[name]=sc
