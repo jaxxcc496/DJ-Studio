@@ -1,38 +1,40 @@
 # DJ-Studio
 
-Free, customizable DJ software for Windows. This project is under active development.
+A free, customizable Windows DJ software project. The current release focuses on the performance-screen design and library workflow.
 
-## Current version
+## Included in this build
 
-- Two-deck performance layout
-- Add local audio files to the library
-- Search the library by filename
-- Create, rename, and delete playlists
-- Add tracks to playlists and remove tracks from the current view
-- Load a selected library track into Deck A or Deck B
-- Four selectable interface themes
-- Windows build workflow using GitHub Actions
+- Redesigned two-deck layout with round jogwheel visuals
+- Large waveform-style display areas (currently visual mockups, not audio analysis)
+- Deck load controls, cue, play/stop, pitch, sync, loop and hot-cue interface controls
+- Mixer layout with gain, EQ and crossfader sliders (visual controls only)
+- Eight sampler pads (interface only)
+- Music library: add local audio files and search by filename
+- Playlists: create, rename, delete, and add/remove tracks
+- Library and playlist data saved locally on the computer
+- Four themes: Midnight, VirtualDJ Grey, Rekordbox Blue, and Purple
 
-**Not implemented yet:** actual audio playback, scratching, beat detection, MIDI/controller support, mixer processing, effects, sampler, and recording. The deck controls are currently interface placeholders and do not play sound yet.
+## Not connected yet
 
-## Run locally
+Audio playback, real-time waveform analysis, jogwheel scratching, cue/loop playback, MIDI/controller support, effects processing, and sampler audio are not implemented yet. The controls and jogwheels in this build are interface elements, not functioning audio controls. These need a separate audio-engine development stage.
+
+## Run
 
 Install Python 3.10 or newer and run:
 
     python app/main.py
 
-The app uses Python's standard library (Tkinter).
+The app currently uses Python's standard library (Tkinter).
 
-## Build for Windows
+## Windows build
 
-Open the repository's **Actions** tab and choose **Build Windows app**. A push to the main branch also starts a build. When it finishes, download the **DJ-Studio-Windows** artifact from the workflow run.
+A push to the `main` branch starts the GitHub Actions workflow. Open **Actions**, select the latest successful **Build Windows app** run, and download its `DJ-Studio-Windows` artifact.
 
-## Roadmap
+## Next development stages
 
-1. Improve the interface and save user preferences
-2. Add a real audio engine and playable decks
-3. Add cue points, loops, pitch, waveform analysis, and beat matching
-4. Add MIDI device detection and customizable mappings
-5. Add mixer, effects, sampler, recording, and plugin support
+1. Complete and refine the interface and save layout preferences
+2. Add the audio engine and real two-deck playback
+3. Connect jogwheel movement, seeking, scratch behavior, cue points and loops
+4. Add beat analysis and genuine scrolling waveforms
 
-Controller compatibility will depend on each device's MIDI/HID protocol and available drivers.
+MIDI and VST/plugin support are not part of the current requested stage.
