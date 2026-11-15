@@ -17,6 +17,19 @@ class AudioEngine:
         self.decks = {key: self._new_deck() for key in ("A", "B")}
         self.crossfade = 0.0
         self.samples = [self._new_sample() for _ in range(8)]
+        self.effects = {key: {"filter": False, "echo": False} for key in ("A", "B")}
+        self._fx_filters = {
+            "filter": butter(2, 1200, btype="lowpass", fs=self.sample_rate, output="sos")
+        }
+        self._fx_state = {
+            key: np.zeros((len(self._fx_filters["filter"]), 2, 2), dtype=np.float64)
+            for key in ("A", "B")
+        }
+        self._echo_buffers = {
+            key: np.zeros((int(self.sample_rate * 0.28), 2), dtype=np.float32)
+            for key in ("A", "B")
+        }
+        self._echo_positions = {"A": 0, "B": 0}
         self.stream = None
         self.error = None
         self._filters = {
@@ -168,6 +181,38 @@ class AudioEngine:
         with self.lock:
             self.crossfade = float(np.clip(value, -1.0, 1.0))
 
+    def set_effect(self, deck, effect, enabled):
+        if effect not in ("filter", "echo"):
+            raise ValueError("Effect must be filter or echo")
+        with self.lock:
+            self.effects[deck][effect] = bool(enabled)
+            if effect == "filter":
+                self._fx_state[deck].fill(0)
+            else:
+                self._echo_buffers[deck].fill(0)
+                self._echo_positions[deck] = 0
+
+    def _process_effects(self, deck, block):
+        fx = self.effects[deck]
+        if fx["filter"]:
+            filtered, state = sosfilt(
+                self._fx_filters["filter"], block, axis=0,
+                zi=self._fx_state[deck]
+            )
+            self._fx_state[deck] = state
+            block = filtered.astype(np.float32, copy=False)
+        if fx["echo"]:
+            buffer = self._echo_buffers[deck]
+            pos = self._echo_positions[deck]
+            delayed = np.empty_like(block)
+            for i in range(len(block)):
+                delayed[i] = buffer[pos]
+                buffer[pos] = block[i] + delayed[i] * 0.32
+                pos = (pos + 1) % len(buffer)
+            self._echo_positions[deck] = pos
+            block = block + delayed * 0.38
+        return block
+
     def set_loop(self, deck, start, end):
         with self.lock:
             d = self.decks[deck]
@@ -226,6 +271,7 @@ class AudioEngine:
                 block = np.zeros((frames, 2), dtype=np.float32)
                 block[valid] = audio[i0] * (1.0 - frac) + audio[i1] * frac
                 block = self._eq_block(key, block, d["eq"])
+                block = self._process_effects(key, block)
                 outdata += block * (d["gain"] * deck_levels[key])
                 d["position"] += frames * step / self.sample_rate
                 if d["loop"] is not None and d["position"] >= d["loop"][1]:
