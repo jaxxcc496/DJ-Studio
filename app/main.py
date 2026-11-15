@@ -161,7 +161,10 @@ class DJStudio(tk.Tk):
   right=self.frame(row); right.pack(side="left",fill="both",expand=True)
   btns=self.frame(right); btns.pack(anchor="w",pady=2)
   self.button(btns,"LOAD",lambda k=key:self.load_to(k)).pack(side="left",padx=2)
-  self.button(btns,"CUE",lambda k=key:self.set_hot_cue(k,"CUE")).pack(side="left",padx=2)
+  cue_btn=self.button(btns,"CUE")
+  cue_btn.pack(side="left",padx=2)
+  cue_btn.bind("<ButtonPress-1>",lambda e,k=key:self.cue_hold_start(k))
+  cue_btn.bind("<ButtonRelease-1>",lambda e,k=key:self.cue_hold_end(k))
   self.deck_play_button=self.deck_play_button if hasattr(self,"deck_play_button") else {}
   play_btn=self.button(btns,"▶ PLAY",lambda k=key:self.toggle_deck(k))
   play_btn.pack(side="left",padx=2)
@@ -492,6 +495,37 @@ class DJStudio(tk.Tk):
     length=snd.get_length()
     if length>0: pos=self.deck_play_offset[key]+(pos-self.deck_play_offset[key])%length
   return min(self.deck_duration.get(key,0.0),pos)
+
+ def cue_hold_start(self,key):
+  if not self.deck_tracks.get(key) or not self.deck_sounds.get(key):
+   self.set_status("Load a track into Deck "+key+" first"); return
+  if "CUE" not in self.deck_cues[key]:
+   self.deck_cues[key]["CUE"]=0.0
+   self.draw_wave(key)
+  position=self.deck_cues[key]["CUE"]
+  channel=self.deck_channels.get(key) if self.audio_ready else None
+  if not channel: return
+  channel.stop()
+  self.deck_loop_active[key]=False; self.deck_loop_sound[key]=None
+  clip=self.make_audio_slice(key,position,None)
+  if clip is None:
+   self.set_status("Could not play from the CUE point"); return
+  self.deck_playing_sound[key]=clip
+  channel.play(clip)
+  self.apply_deck_mix(key)
+  self.deck_play_offset[key]=position
+  self.deck_started[key]=time.monotonic()
+  self.set_status("CUE held — playing from "+self.format_time(position))
+
+ def cue_hold_end(self,key):
+  if "CUE" not in self.deck_cues.get(key,{}): return
+  channel=self.deck_channels.get(key) if self.audio_ready else None
+  if channel: channel.stop()
+  self.deck_started[key]=None
+  self.deck_play_offset[key]=self.deck_cues[key]["CUE"]
+  self.deck_loop_active[key]=False; self.deck_loop_sound[key]=None
+  self.draw_wave(key)
+  self.set_status("CUE released — playback stopped at cue point")
 
  def set_hot_cue(self,key,name):
   if not self.deck_tracks.get(key):
