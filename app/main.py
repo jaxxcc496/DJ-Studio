@@ -131,7 +131,7 @@ class DJStudio(tk.Tk):
    col=self.frame(controls); col.pack(side="left",expand=True,fill="x",padx=3)
    self.label(col,name,font=("Segoe UI",7,"bold")).pack()
    if name=="GAIN A":
-    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(0); sc.pack()
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
    elif name=="GAIN B":
     sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="B":self.set_deck_gain(k,v)); sc.set(0); sc.pack()
    elif name=="CROSSFADER":
