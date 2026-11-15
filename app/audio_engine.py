@@ -46,7 +46,7 @@ class AudioEngine:
     @staticmethod
     def _new_deck():
         return {
-            "audio": None, "position": 0.0, "playing": False, "pitch": 1.0,
+            "audio": None, "source_audio": None, "position": 0.0, "playing": False, "pitch": 1.0,
             "gain": 1.0, "eq": {"low": 0.0, "mid": 0.0, "high": 0.0},
             "loop": None, "path": None, "scratch_rate": None,
         }
@@ -98,7 +98,7 @@ class AudioEngine:
     def load(self, deck, path):
         data = self._decode(path)
         with self.lock:
-            self.decks[deck].update(audio=data, position=0.0, playing=False,
+            self.decks[deck].update(audio=data, source_audio=data.copy(), position=0.0, playing=False,
                                     pitch=1.0, loop=None, path=path)
             self._reset_eq_state(deck)
         return len(data) / self.sample_rate
@@ -166,6 +166,21 @@ class AudioEngine:
     def set_pitch(self, deck, percent):
         with self.lock:
             self.decks[deck]["pitch"] = float(np.clip(1.0 + percent / 100.0, 0.5, 1.5))
+
+    def source_audio(self, deck):
+        with self.lock:
+            source = self.decks[deck]["source_audio"]
+            return None if source is None else source.copy()
+
+    def set_stretched_audio(self, deck, data):
+        with self.lock:
+            d = self.decks[deck]
+            old_length = max(1, len(d["audio"]) if d["audio"] is not None else 1)
+            fraction = d["position"] * self.sample_rate / old_length
+            d["audio"] = np.ascontiguousarray(data, dtype=np.float32)
+            d["position"] = fraction * len(d["audio"]) / self.sample_rate
+            d["pitch"] = 1.0
+            self._reset_eq_state(deck)
 
     def set_scratch_rate(self, deck, rate):
         with self.lock:
