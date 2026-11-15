@@ -50,15 +50,16 @@ class DJStudio(tk.Tk):
  def load_data(self):
   try:
    with open(DATA_FILE,"r",encoding="utf-8") as f:
-    d=json.load(f); self.tracks=d.get("tracks",[]); self.playlists=d.get("playlists",{"All Tracks":[]})
+    d=json.load(f); self.tracks=d.get("tracks",[]); self.playlists=d.get("playlists",{"All Tracks":[]}); self.sample_paths=d.get("sample_paths",[None]*8)
     self.theme_name.set(d.get("theme","VirtualDJ Black"))
     if "All Tracks" not in self.playlists: self.playlists["All Tracks"]=list(self.tracks)
    self.current_playlist="All Tracks"
+   if not hasattr(self,"sample_paths"): self.sample_paths=[None]*8
   except Exception: pass
 
  def save_data(self):
   try:
-   with open(DATA_FILE,"w",encoding="utf-8") as f: json.dump({"tracks":self.tracks,"playlists":self.playlists,"theme":self.theme_name.get()},f,indent=2)
+   with open(DATA_FILE,"w",encoding="utf-8") as f: json.dump({"tracks":self.tracks,"playlists":self.playlists,"theme":self.theme_name.get(),"sample_paths":getattr(self,"sample_paths",[None]*8)},f,indent=2)
    self.set_status("Library and playlists saved on this computer")
   except Exception as e: self.set_status("Could not save library: "+str(e))
 
@@ -145,11 +146,17 @@ class DJStudio(tk.Tk):
   self.sampler_panel=self.frame(self.bottom,width=290,padx=10,pady=9); self.sampler_panel.pack(side="right",fill="y"); self.sampler_panel.pack_propagate(False)
   self.label(self.sampler_panel,"SAMPLE PADS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   pads=self.frame(self.sampler_panel); pads.pack(fill="both",expand=True,pady=5)
+  self.sample_buttons=[]
   for i in range(8):
-   b=self.button(pads,"SAMPLE "+str(i+1),lambda n=i+1:self.set_status("Sample pad "+str(n)+" selected — audio sampler not connected yet"))
+   b=self.button(pads,"LOAD "+str(i+1),lambda n=i:self.load_sample(n))
+   b.configure(command=lambda n=i:self.trigger_sample(n))
    b.grid(row=i//4,column=i%4,sticky="nsew",padx=3,pady=3)
+   b.bind("<Button-3>",lambda e,n=i:self.stop_sample(n))
+   self.sample_buttons.append(b)
+  self.sample_paths=[None]*8
   for i in range(4): pads.columnconfigure(i,weight=1)
   for i in range(2): pads.rowconfigure(i,weight=1)
+  self.button(self.sampler_panel,"STOP ALL SAMPLES",self.audio_engine.stop_all_samples).pack(fill="x",pady=(4,0))
   self.statusbar=tk.Label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7,bd=0); self.statusbar.pack(fill="x",pady=(8,0))
   self.refresh_playlists(); self.refresh_tracks(); self.refresh_queue()
   self.after(50,self.update_deck_displays)
@@ -366,6 +373,26 @@ class DJStudio(tk.Tk):
   def apply():
    self.theme_name.set(choice.get()); self.theme_box.set(choice.get()); self.apply_theme(); self.save_data(); win.destroy()
   tk.Button(body,text="APPLY AND SAVE",command=apply,bg=c["accent"],fg="#06111c",relief="flat",font=("Segoe UI",9,"bold"),padx=12,pady=9).pack(anchor="e")
+
+ def load_sample(self,index):
+  path=filedialog.askopenfilename(title="Load sample pad "+str(index+1),filetypes=[("Audio files","*.wav *.mp3 *.flac *.aiff *.aif *.ogg *.m4a"),("All files","*.*")])
+  if not path:return
+  try:
+   self.audio_engine.load_sample(index,path)
+   self.sample_paths[index]=path
+   self.sample_buttons[index].configure(text=os.path.splitext(os.path.basename(path))[0][:14])
+   self.save_data()
+   self.set_status("Sample "+str(index+1)+" loaded — click to play, right-click to stop")
+  except Exception as e:
+   messagebox.showerror("Sample could not load",str(e))
+ def trigger_sample(self,index):
+  if not self.audio_engine.trigger_sample(index):
+   self.load_sample(index)
+  else:
+   self.set_status("Sample "+str(index+1)+" playing")
+ def stop_sample(self,index):
+  self.audio_engine.stop_sample(index)
+  self.set_status("Sample "+str(index+1)+" stopped")
 
  def add_music(self):
   paths=filedialog.askopenfilenames(title="Add music",filetypes=[("Audio files","*.mp3 *.wav *.flac *.aiff *.aif *.ogg *.m4a"),("All files","*.*")])
