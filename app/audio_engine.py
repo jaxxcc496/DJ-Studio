@@ -53,9 +53,15 @@ class AudioEngine:
                 self.stream = None
 
     def load(self, deck, path):
-        data, sr = sf.read(path, dtype="float32", always_2d=True)
+        try:
+            data, sr = sf.read(path, dtype="float32", always_2d=True)
+        except Exception:
+            # Fallback decoder for formats not supported by the installed libsndfile.
+            import librosa
+            audio, sr = librosa.load(path, sr=self.sample_rate, mono=False, dtype=np.float32)
+            data = audio.T if audio.ndim > 1 else audio[:, None]
+            sr = self.sample_rate
         if sr != self.sample_rate:
-            # Resample once on load; playback pitch remains an independent control.
             from scipy.signal import resample_poly
             import math
             g = math.gcd(int(sr), self.sample_rate)
