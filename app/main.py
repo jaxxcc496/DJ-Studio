@@ -504,7 +504,7 @@ class DJStudio(tk.Tk):
    def worker():
     try:
      import librosa
-     stretched=librosa.effects.time_stretch(y=source.T,rate=rate,axis=-1).T
+     stretched=librosa.effects.time_stretch(y=source.T,rate=rate).T
      if generation==self.keylock_generation[key]:self.audio_engine.set_stretched_audio(key,stretched)
      result=None
     except Exception as exc: result=str(exc)
