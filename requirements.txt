@@ -1,0 +1,1 @@
+# The first prototype uses Python's standard library (Tkinter).\n# PyInstaller is installed by the Windows build workflow.\n
