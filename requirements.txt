@@ -1,3 +1,7 @@
 pygame>=2.6.1
 pyinstaller>=6.0
 librosa>=0.10.2
+sounddevice>=0.5.1
+soundfile>=0.13.1
+scipy>=1.13.0
+numpy>=1.26.0
