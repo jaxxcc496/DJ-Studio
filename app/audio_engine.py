@@ -17,7 +17,7 @@ class AudioEngine:
         self.decks = {key: self._new_deck() for key in ("A", "B")}
         self.crossfade = 0.0
         self.samples = [self._new_sample() for _ in range(8)]
-        self.effects = {key: {"filter": False, "echo": False} for key in ("A", "B")}
+        self.effects = {key: {"filter": False, "echo": False, "reverb": False, "flanger": False, "phaser": False, "noise": False} for key in ("A", "B")}
         self._fx_filters = {
             "filter": butter(2, 1200, btype="lowpass", fs=self.sample_rate, output="sos")
         }
@@ -30,6 +30,12 @@ class AudioEngine:
             for key in ("A", "B")
         }
         self._echo_positions = {"A": 0, "B": 0}
+        self._reverb_buffers = {key: np.zeros((int(self.sample_rate * 0.19), 2), dtype=np.float32) for key in ("A", "B")}
+        self._reverb_positions = {"A": 0, "B": 0}
+        self._flanger_buffers = {key: np.zeros((int(self.sample_rate * 0.012) + 4, 2), dtype=np.float32) for key in ("A", "B")}
+        self._flanger_positions = {"A": 0, "B": 0}
+        self._flanger_phase = {"A": 0.0, "B": 0.0}
+        self._fx_mix = {key: {"filter": 0.75, "echo": 0.38, "reverb": 0.28, "flanger": 0.35, "phaser": 0.25, "noise": 0.08} for key in ("A", "B")}
         self.stream = None
         self.error = None
         self._filters = {
@@ -213,15 +219,25 @@ class AudioEngine:
             self.crossfade = float(np.clip(value, -1.0, 1.0))
 
     def set_effect(self, deck, effect, enabled):
-        if effect not in ("filter", "echo"):
-            raise ValueError("Effect must be filter or echo")
+        if effect not in ("filter", "echo", "reverb", "flanger", "phaser", "noise"):
+            raise ValueError("Unsupported effect: " + str(effect))
         with self.lock:
             self.effects[deck][effect] = bool(enabled)
             if effect == "filter":
                 self._fx_state[deck].fill(0)
-            else:
+            elif effect == "echo":
                 self._echo_buffers[deck].fill(0)
                 self._echo_positions[deck] = 0
+            elif effect == "reverb":
+                self._reverb_buffers[deck].fill(0)
+                self._reverb_positions[deck] = 0
+            elif effect in ("flanger", "phaser"):
+                self._flanger_buffers[deck].fill(0)
+                self._flanger_positions[deck] = 0
+
+    def set_effect_mix(self, deck, effect, value):
+        with self.lock:
+            self._fx_mix[deck][effect] = float(np.clip(value, 0.0, 1.0))
 
     def _process_effects(self, deck, block):
         fx = self.effects[deck]
@@ -231,7 +247,8 @@ class AudioEngine:
                 zi=self._fx_state[deck]
             )
             self._fx_state[deck] = state
-            block = filtered.astype(np.float32, copy=False)
+            mix = self._fx_mix[deck]["filter"]
+            block = block * (1.0 - mix) + filtered.astype(np.float32, copy=False) * mix
         if fx["echo"]:
             buffer = self._echo_buffers[deck]
             pos = self._echo_positions[deck]
@@ -241,7 +258,42 @@ class AudioEngine:
                 buffer[pos] = block[i] + delayed[i] * 0.32
                 pos = (pos + 1) % len(buffer)
             self._echo_positions[deck] = pos
-            block = block + delayed * 0.38
+            block = block + delayed * self._fx_mix[deck]["echo"]
+        if fx["reverb"]:
+            buffer = self._reverb_buffers[deck]
+            pos = self._reverb_positions[deck]
+            wet = np.empty_like(block)
+            for i in range(len(block)):
+                delayed = buffer[pos].copy()
+                wet[i] = delayed
+                buffer[pos] = block[i] + delayed * 0.58
+                pos = (pos + 1) % len(buffer)
+            self._reverb_positions[deck] = pos
+            mix = self._fx_mix[deck]["reverb"]
+            block = block * (1.0 - mix * 0.45) + wet * mix
+        if fx["flanger"] or fx["phaser"]:
+            buffer = self._flanger_buffers[deck]
+            pos = self._flanger_positions[deck]
+            phase = self._flanger_phase[deck]
+            wet = np.empty_like(block)
+            size = len(buffer)
+            depth = 0.004 if fx["flanger"] else 0.002
+            rate = 0.22 if fx["flanger"] else 0.11
+            effect_name = "flanger" if fx["flanger"] else "phaser"
+            mix = self._fx_mix[deck][effect_name]
+            for i in range(len(block)):
+                delay = int((0.0025 + depth * (0.5 + 0.5 * math.sin(phase))) * self.sample_rate)
+                read = (pos - delay) % size
+                delayed = buffer[read]
+                wet[i] = delayed
+                buffer[pos] = block[i] + delayed * 0.18
+                pos = (pos + 1) % size
+                phase += 2.0 * math.pi * rate / self.sample_rate
+            self._flanger_positions[deck] = pos
+            self._flanger_phase[deck] = phase % (2.0 * math.pi)
+            block = block * (1.0 - mix * 0.5) + wet * mix * 0.5
+        if fx["noise"]:
+            block = block + np.random.default_rng().standard_normal(block.shape).astype(np.float32) * self._fx_mix[deck]["noise"]
         return block
 
     def set_loop(self, deck, start, end):
