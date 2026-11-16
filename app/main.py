@@ -106,7 +106,6 @@ class DJStudio(tk.Tk):
    else:
     sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_eq_control(n,v)); sc.set(50); sc.pack()
     self.eq_controls[name]=sc
-  self.bottom=self.frame(self); self.bottom.pack(fill="x",pady=(9,0))
   self.middle=self.frame(self); self.middle.pack(fill="both",expand=True)
   self.sidebar=self.frame(self.middle,width=205,padx=10,pady=10); self.sidebar.pack(side="left",fill="y",padx=(0,8)); self.sidebar.pack_propagate(False)
   self.label(self.sidebar,"COLLECTION",font=("Segoe UI",11,"bold")).pack(anchor="w",pady=(2,10))
@@ -145,6 +144,7 @@ class DJStudio(tk.Tk):
   self.button(actionrow,"＋ PLAYLIST",self.add_to_playlist).pack(side="left",padx=5)
   self.button(actionrow,"REMOVE",self.remove_track).pack(side="left",padx=5)
 
+  self.bottom=self.frame(self); self.bottom.pack(fill="x",pady=(9,0))
   self.sampler_panel=self.frame(self.bottom,width=290,padx=10,pady=9); self.sampler_panel.pack(side="right",fill="y"); self.sampler_panel.pack_propagate(False)
   self.label(self.sampler_panel,"SAMPLE PADS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   pads=self.frame(self.sampler_panel); pads.pack(fill="both",expand=True,pady=5)
