@@ -363,14 +363,14 @@ class DJStudio(tk.Tk):
 
  def draw_jog(self,key):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["jog"]; cv.delete("all")
-  cv.create_oval(4,4,112,112,fill="#080b10",outline=c["line"],width=3)
-  cv.create_oval(13,13,103,103,fill="#202a38",outline=c["muted"],width=1)
-  for angle in range(0,360,15):
-   rad=math.radians(angle); x1=58+39*math.cos(rad); y1=58+39*math.sin(rad); x2=58+44*math.cos(rad); y2=58+44*math.sin(rad)
+  cv.create_oval(4,4,150,150,fill="#080b10",outline=c["line"],width=4)
+  cv.create_oval(14,14,140,140,fill="#202a38",outline=c["muted"],width=1)
+  for angle in range(0,360,10):
+   rad=math.radians(angle); x1=77+56*math.cos(rad); y1=77+56*math.sin(rad); x2=77+62*math.cos(rad); y2=77+62*math.sin(rad)
    cv.create_line(x1,y1,x2,y2,fill=c["muted"],width=1)
-  cv.create_oval(35,35,81,81,fill=c["panel2"],outline=c["accent"],width=2)
-  cv.create_text(58,58,text=key,fill=c["fg"],font=("Segoe UI",14,"bold"))
-  cv.create_text(58,94,text="JOG",fill=c["muted"],font=("Segoe UI",7,"bold"))
+  cv.create_oval(48,48,106,106,fill=c["panel2"],outline=c["accent"],width=2)
+  cv.create_text(77,77,text=key,fill=c["fg"],font=("Segoe UI",16,"bold"))
+  cv.create_text(77,124,text="JOG / SCRATCH",fill=c["muted"],font=("Segoe UI",7,"bold"))
 
  def refresh_queue(self):
   if not hasattr(self,"queue_box"): return
