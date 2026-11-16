@@ -213,14 +213,24 @@ class DJStudio(tk.Tk):
    self.button(row2,t,lambda x=t,k=key:self.adjust_pitch(k,-0.5 if x=="− PITCH" else 0.5) if x!="SYNC" else self.sync_deck(k)).pack(side="left",padx=2)
   self.fx_buttons=self.fx_buttons if hasattr(self,"fx_buttons") else {}
   fxbox=self.frame(right); fxbox.pack(fill="x",pady=(5,2))
-  self.label(fxbox,"FX",font=("Segoe UI",8,"bold")).pack(anchor="w")
-  self.fx_buttons[key]={}
-  fxgrid=self.frame(fxbox); fxgrid.pack(fill="x")
-  for n,effect in enumerate(("filter","echo","reverb","flanger","phaser","noise")):
-   btn=self.button(fxgrid,effect.upper()+" OFF",lambda k=key,x=effect:self.toggle_effect(k,x))
-   btn.grid(row=n//3,column=n%3,sticky="ew",padx=2,pady=2)
-   self.fx_buttons[key][effect]=btn
-  for col in range(3): fxgrid.columnconfigure(col,weight=1)
+  self.label(fxbox,"FX UNIT",font=("Segoe UI",8,"bold")).pack(anchor="w")
+  self.fx_slot_vars=self.fx_slot_vars if hasattr(self,"fx_slot_vars") else {}
+  self.fx_slot_effects=self.fx_slot_effects if hasattr(self,"fx_slot_effects") else {}
+  self.fx_slot_buttons=self.fx_slot_buttons if hasattr(self,"fx_slot_buttons") else {}
+  self.fx_slot_vars[key]={}; self.fx_slot_effects[key]={}; self.fx_slot_buttons[key]={}; self.fx_buttons[key]={}
+  fx_choices=("FILTER","ECHO","REVERB","FLANGER","PHASER","NOISE")
+  for slot,default_fx in enumerate(("ECHO","REVERB","FILTER")):
+   line=self.frame(fxbox); line.pack(fill="x",pady=1)
+   var=tk.StringVar(value=default_fx)
+   self.fx_slot_vars[key][slot]=var; self.fx_slot_effects[key][slot]=default_fx.lower()
+   choice=ttk.Combobox(line,textvariable=var,values=fx_choices,state="readonly",width=9)
+   choice.pack(side="left",padx=(0,4))
+   choice.bind("<<ComboboxSelected>>",lambda e,k=key,n=slot:self.select_fx_slot(k,n))
+   amount=tk.Scale(line,from_=100,to=0,orient="horizontal",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k=key,n=slot:self.set_fx_slot_mix(k,n,v))
+   amount.set(35 if default_fx!="FILTER" else 75); amount.pack(side="left",fill="x",expand=True)
+   btn=self.button(line,"OFF",lambda k=key,n=slot:self.toggle_fx_slot(k,n))
+   btn.pack(side="right",padx=(4,0)); self.fx_slot_buttons[key][slot]=btn
+   self.fx_buttons[key][default_fx.lower()]=btn
   self.keylock_buttons=self.keylock_buttons if hasattr(self,"keylock_buttons") else {}
   keybtn=self.button(fxbox,"KEY LOCK OFF",lambda k=key:self.toggle_keylock(k))
   keybtn.pack(anchor="w",pady=(3,0)); self.keylock_buttons[key]=keybtn
@@ -710,6 +720,24 @@ class DJStudio(tk.Tk):
   targets=[("Crossfader","crossfade"),("Gain Deck A","gain_A"),("Gain Deck B","gain_B"),("Pitch Deck A","pitch_A"),("Pitch Deck B","pitch_B"),("LOW A","eq_low_A"),("MID A","eq_mid_A"),("HIGH A","eq_high_A"),("LOW B","eq_low_B"),("MID B","eq_mid_B"),("HIGH B","eq_high_B")]
   for label,target in targets:
    self.button(win,"LEARN  "+label,lambda t=target:self.learn_midi(t)).pack(fill="x",padx=12,pady=2)
+
+ def select_fx_slot(self,key,slot):
+  old=self.fx_slot_effects[key][slot]
+  if self.audio_engine.effects[key].get(old,False): self.audio_engine.set_effect(key,old,False)
+  effect=self.fx_slot_vars[key][slot].get().lower()
+  self.fx_slot_effects[key][slot]=effect
+  self.set_status("Deck "+key+" FX slot "+str(slot+1)+": "+effect.upper())
+
+ def set_fx_slot_mix(self,key,slot,value):
+  effect=self.fx_slot_effects[key][slot]
+  self.audio_engine.set_effect_mix(key,effect,float(value)/100.0)
+
+ def toggle_fx_slot(self,key,slot):
+  effect=self.fx_slot_effects[key][slot]
+  enabled=not self.audio_engine.effects[key][effect]
+  self.audio_engine.set_effect(key,effect,enabled)
+  self.fx_slot_buttons[key][slot].configure(text="ON" if enabled else "OFF")
+  self.set_status("Deck "+key+" "+effect.upper()+(" enabled" if enabled else " disabled"))
 
  def toggle_effect(self,key,effect):
   enabled=not self.audio_engine.effects[key][effect]
