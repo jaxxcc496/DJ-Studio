@@ -90,6 +90,23 @@ class DJStudio(tk.Tk):
   self.beatmatch_label=self.label(self,"BEATMATCH  •  Load tracks in both decks to compare BPM",font=("Segoe UI",10,"bold"),anchor="center")
   self.beatmatch_label.pack(fill="x",pady=(0,8))
 
+  self.mixer_panel=self.frame(self,padx=12,pady=9); self.mixer_panel.pack(fill="x",pady=(0,9))
+  self.label(self.mixer_panel,"MIXER  •  AUDIO LEVELS",font=("Segoe UI",10,"bold")).pack(anchor="w")
+  controls=self.frame(self.mixer_panel); controls.pack(fill="x",pady=(5,0))
+  self.eq_controls={}
+  for name in ("GAIN A","LOW A","MID A","HIGH A","CROSSFADER","HIGH B","MID B","LOW B","GAIN B"):
+   col=self.frame(controls); col.pack(side="left",expand=True,fill="x",padx=3)
+   self.label(col,name,font=("Segoe UI",7,"bold")).pack()
+   if name=="GAIN A":
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
+   elif name=="GAIN B":
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="B":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
+   elif name=="CROSSFADER":
+    sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=160,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(0); sc.pack()
+   else:
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_eq_control(n,v)); sc.set(50); sc.pack()
+    self.eq_controls[name]=sc
+  self.bottom=self.frame(self); self.bottom.pack(fill="x",pady=(9,0))
   self.middle=self.frame(self); self.middle.pack(fill="both",expand=True)
   self.sidebar=self.frame(self.middle,width=205,padx=10,pady=10); self.sidebar.pack(side="left",fill="y",padx=(0,8)); self.sidebar.pack_propagate(False)
   self.label(self.sidebar,"COLLECTION",font=("Segoe UI",11,"bold")).pack(anchor="w",pady=(2,10))
@@ -128,23 +145,6 @@ class DJStudio(tk.Tk):
   self.button(actionrow,"＋ PLAYLIST",self.add_to_playlist).pack(side="left",padx=5)
   self.button(actionrow,"REMOVE",self.remove_track).pack(side="left",padx=5)
 
-  self.bottom=self.frame(self); self.bottom.pack(fill="x",pady=(9,0))
-  self.mixer_panel=self.frame(self.bottom,padx=12,pady=9); self.mixer_panel.pack(side="left",fill="both",expand=True,padx=(0,7))
-  self.label(self.mixer_panel,"MIXER  •  AUDIO LEVELS",font=("Segoe UI",10,"bold")).pack(anchor="w")
-  controls=self.frame(self.mixer_panel); controls.pack(fill="x",pady=(5,0))
-  self.eq_controls={}
-  for name in ("GAIN A","LOW A","MID A","HIGH A","CROSSFADER","HIGH B","MID B","LOW B","GAIN B"):
-   col=self.frame(controls); col.pack(side="left",expand=True,fill="x",padx=3)
-   self.label(col,name,font=("Segoe UI",7,"bold")).pack()
-   if name=="GAIN A":
-    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
-   elif name=="GAIN B":
-    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="B":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
-   elif name=="CROSSFADER":
-    sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=160,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(0); sc.pack()
-   else:
-    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_eq_control(n,v)); sc.set(50); sc.pack()
-    self.eq_controls[name]=sc
   self.sampler_panel=self.frame(self.bottom,width=290,padx=10,pady=9); self.sampler_panel.pack(side="right",fill="y"); self.sampler_panel.pack_propagate(False)
   self.label(self.sampler_panel,"SAMPLE PADS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   pads=self.frame(self.sampler_panel); pads.pack(fill="both",expand=True,pady=5)
