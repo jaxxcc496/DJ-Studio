@@ -83,8 +83,7 @@ class DJStudio(tk.Tk):
   self.theme_label=self.label(self.top,text="THEME",font=("Segoe UI",8,"bold")); self.theme_label.pack(side="right",padx=6)
 
   self.rhythm_wave=tk.Canvas(self,height=180,bd=0,highlightthickness=0)
-  self.rhythm_wave.pack(fill="x",pady=(0,8))
-  self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,9))
+  self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,8))
   self.deck_ui={}
   self.deck_ui={}
   self.deck_a_panel=self.frame(self.deck_row); self.deck_a_panel.pack(side="left",fill="both",expand=True)
@@ -115,6 +114,7 @@ class DJStudio(tk.Tk):
   self.crossfader_scale.set(0); self.crossfader_scale.pack(fill="x")
   self.deck_b_panel=self.frame(self.deck_row); self.deck_b_panel.pack(side="left",fill="both",expand=True)
   self.build_deck(self.deck_b_panel,"B")
+  self.rhythm_wave.pack(fill="x",pady=(0,8))
   self.beatmatch_label=self.label(self,"BEATMATCH  •  Load tracks in both decks to compare BPM",font=("Segoe UI",10,"bold"),anchor="center")
   self.beatmatch_label.pack(fill="x",pady=(0,8))
 
@@ -191,6 +191,12 @@ class DJStudio(tk.Tk):
   jog.bind("<Button-1>",lambda e,k=key:self.jog_start(k,e))
   jog.bind("<B1-Motion>",lambda e,k=key:self.jog_move(k,e))
   jog.bind("<ButtonRelease-1>",lambda e,k=key:self.jog_end(k,e))
+  pitchcol=self.frame(row); pitchcol.pack(side="left",fill="y",padx=(0,8))
+  self.label(pitchcol,"PITCH",font=("Segoe UI",7,"bold")).pack()
+  pitch=tk.Scale(pitchcol,from_=8,to=-8,resolution=0.1,orient="vertical",length=132,showvalue=True,bd=0,highlightthickness=0,command=lambda v,k=key:self.set_pitch_slider(k,v))
+  pitch.set(0); pitch.pack()
+  self.pitch_sliders=self.pitch_sliders if hasattr(self,"pitch_sliders") else {}
+  self.pitch_sliders[key]=pitch
   right=self.frame(row); right.pack(side="left",fill="both",expand=True)
   btns=self.frame(right); btns.pack(anchor="w",pady=2)
   self.button(btns,"LOAD",lambda k=key:self.load_to(k)).pack(side="left",padx=2)
@@ -234,11 +240,11 @@ class DJStudio(tk.Tk):
  def draw_rhythm_wave(self):
   if not hasattr(self,"rhythm_wave") or not hasattr(self,"deck_ui"): return
   cv=self.rhythm_wave; cv.delete("all")
-  w=max(500,cv.winfo_width()); h=132
+  w=max(500,cv.winfo_width()); h=180
   cv.create_rectangle(0,0,w,h,fill="#080d15",outline="#303b49")
-  row_h=62; colors={"A":"#28b8ff","B":"#ff526d"}
+  row_h=86; colors={"A":"#28b8ff","B":"#ff526d"}
   for row,key in enumerate(("A","B")):
-   y0=row*66; cv.create_line(0,y0+row_h,w,y0+row_h,fill="#263343")
+   y0=row*90; cv.create_line(0,y0+row_h,w,y0+row_h,fill="#263343")
    path=self.deck_tracks.get(key); values=self.deck_waveforms.get(key,[]); duration=self.deck_duration.get(key,0.0)
    if not path or not values or duration<=0:
     cv.create_text(12,y0+row_h/2,text="DECK "+key+"   LOAD TRACK TO ANALYSE WAVEFORM",anchor="w",fill="#77889b",font=("Segoe UI",9,"bold")); continue
@@ -274,7 +280,7 @@ class DJStudio(tk.Tk):
     self.deck_ui[k]["time"].configure(text=self.format_time(p)+" / "+self.format_time(self.deck_duration[k])+" • LEFT "+self.format_time(left))
     self.draw_wave(k)
     if left<=0 and not self.deck_loop_active[k]:self.deck_started[k]=None;self.deck_play_button[k].configure(text="▶ PLAY")
-  self.after(50,self.update_deck_displays)
+  self.after(80,self.update_deck_displays)
 
  def draw_wave(self,key):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["wave"]; cv.delete("all")
@@ -334,8 +340,14 @@ class DJStudio(tk.Tk):
     # Use librosa's beat tracker rather than choosing the tallest raw autocorrelation peak.
     import librosa
     onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=hop)
-    tempo=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=np.median)
-    bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
+    tempo,beat_frames=librosa.beat.beat_track(onset_envelope=onset,sr=sr,hop_length=hop,start_bpm=128.0,tightness=100.0,trim=False)
+    beat_times=librosa.frames_to_time(beat_frames,sr=sr,hop_length=hop)
+    if len(beat_times)>=4:
+     intervals=np.diff(beat_times)
+     intervals=intervals[(intervals>0.28)&(intervals<1.0)]
+     bpm=60.0/float(np.median(intervals)) if len(intervals)>=3 else float(np.asarray(tempo).reshape(-1)[0])
+    else:
+     bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
     if bpm is not None:
      if bpm<80.0: bpm*=2.0
      elif bpm>170.0: bpm/=2.0
@@ -484,8 +496,13 @@ class DJStudio(tk.Tk):
       wave=[(float(bands[0][i]),float(bands[1][i]),float(bands[2][i])) for i in ix]
       import librosa
       onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=hop)
-      tempo=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=np.median)
-      bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
+      tempo,beat_frames=librosa.beat.beat_track(onset_envelope=onset,sr=sr,hop_length=hop,start_bpm=128.0,tightness=100.0,trim=False)
+      beat_times=librosa.frames_to_time(beat_frames,sr=sr,hop_length=hop)
+      if len(beat_times)>=4:
+       intervals=np.diff(beat_times); intervals=intervals[(intervals>0.28)&(intervals<1.0)]
+       bpm=60.0/float(np.median(intervals)) if len(intervals)>=3 else float(np.asarray(tempo).reshape(-1)[0])
+      else:
+       bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
       if bpm is not None:
        if bpm<80.0: bpm*=2.0
        elif bpm>170.0: bpm/=2.0
