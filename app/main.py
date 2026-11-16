@@ -726,6 +726,7 @@ class DJStudio(tk.Tk):
   if self.audio_engine.effects[key].get(old,False): self.audio_engine.set_effect(key,old,False)
   effect=self.fx_slot_vars[key][slot].get().lower()
   self.fx_slot_effects[key][slot]=effect
+  self.fx_slot_buttons[key][slot].configure(text="OFF")
   self.set_status("Deck "+key+" FX slot "+str(slot+1)+": "+effect.upper())
 
  def set_fx_slot_mix(self,key,slot,value):
