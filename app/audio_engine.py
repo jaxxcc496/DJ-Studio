@@ -36,6 +36,7 @@ class AudioEngine:
         self._flanger_positions = {"A": 0, "B": 0}
         self._flanger_phase = {"A": 0.0, "B": 0.0}
         self._fx_mix = {key: {"filter": 0.75, "echo": 0.38, "reverb": 0.28, "flanger": 0.35, "phaser": 0.25, "noise": 0.08} for key in ("A", "B")}
+        self._noise_rng = np.random.default_rng()
         self.stream = None
         self.error = None
         self._filters = {
@@ -293,7 +294,7 @@ class AudioEngine:
             self._flanger_phase[deck] = phase % (2.0 * math.pi)
             block = block * (1.0 - mix * 0.5) + wet * mix * 0.5
         if fx["noise"]:
-            block = block + np.random.default_rng().standard_normal(block.shape).astype(np.float32) * self._fx_mix[deck]["noise"]
+            block = block + self._noise_rng.standard_normal(block.shape).astype(np.float32) * self._fx_mix[deck]["noise"]
         return block
 
     def set_loop(self, deck, start, end):
