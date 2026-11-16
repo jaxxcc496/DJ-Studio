@@ -333,9 +333,9 @@ class DJStudio(tk.Tk):
     tempo=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=np.median)
     bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
     if bpm is not None:
-     candidates=[bpm/2.0,bpm,bpm*2.0]
-     candidates=[v for v in candidates if 65.0<=v<=190.0]
-     bpm=min(candidates,key=lambda v:abs(v-124.0)) if candidates else None
+     if bpm<80.0: bpm*=2.0
+     elif bpm>170.0: bpm/=2.0
+     if not 65.0<=bpm<=190.0: bpm=None
     result=(waveform,bpm)
    except Exception as e:
     result=([],None); error=str(e)
@@ -483,8 +483,9 @@ class DJStudio(tk.Tk):
       tempo=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=np.median)
       bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
       if bpm is not None:
-       candidates=[v for v in (bpm/2.0,bpm,bpm*2.0) if 65.0<=v<=190.0]
-       bpm=min(candidates,key=lambda v:abs(v-124.0)) if candidates else None
+       if bpm<80.0: bpm*=2.0
+       elif bpm>170.0: bpm/=2.0
+       if not 65.0<=bpm<=190.0: bpm=None
       result=(wave,bpm); self.analysis_cache[p]=result
       self.after(0,lambda p=p,r=result:self.apply_analysis(p,None,*r))
      except Exception as exc:
