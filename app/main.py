@@ -82,7 +82,7 @@ class DJStudio(tk.Tk):
   self.settings_btn=self.button(self.top,"SETTINGS",self.open_settings); self.settings_btn.pack(side="right",padx=(8,2))
   self.theme_label=self.label(self.top,text="THEME",font=("Segoe UI",8,"bold")); self.theme_label.pack(side="right",padx=6)
 
-  self.rhythm_wave=tk.Canvas(self,height=170,bd=0,highlightthickness=0)
+  self.rhythm_wave=tk.Canvas(self,height=180,bd=0,highlightthickness=0)
   self.rhythm_wave.pack(fill="x",pady=(0,8))
   self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,9))
   self.deck_ui={}
@@ -185,7 +185,7 @@ class DJStudio(tk.Tk):
   title=self.label(p,"No track loaded",font=("Segoe UI",11,"bold"),anchor="w"); title.pack(fill="x",pady=(8,0))
   time=self.label(p,"00:00 / 00:00  •  LEFT 00:00",font=("Segoe UI",10,"bold")); time.pack(anchor="w")
   bpm=self.label(p,"BPM  —",font=("Segoe UI",11,"bold")); bpm.pack(anchor="w",pady=(2,0))
-  wave=tk.Canvas(p,height=126,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
+  wave=tk.Canvas(p,height=78,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
   row=self.frame(p); row.pack(fill="x")
   jog=tk.Canvas(row,width=154,height=154,bd=0,highlightthickness=0); jog.pack(side="left",padx=(0,12))
   jog.bind("<Button-1>",lambda e,k=key:self.jog_start(k,e))
@@ -206,15 +206,18 @@ class DJStudio(tk.Tk):
   for t in ("− PITCH","＋ PITCH","SYNC"):
    self.button(row2,t,lambda x=t,k=key:self.adjust_pitch(k,-0.5 if x=="− PITCH" else 0.5) if x!="SYNC" else self.sync_deck(k)).pack(side="left",padx=2)
   self.fx_buttons=self.fx_buttons if hasattr(self,"fx_buttons") else {}
-  fxrow=self.frame(right); fxrow.pack(anchor="w",pady=2)
+  fxbox=self.frame(right); fxbox.pack(fill="x",pady=(5,2))
+  self.label(fxbox,"FX",font=("Segoe UI",8,"bold")).pack(anchor="w")
   self.fx_buttons[key]={}
-  self.keylock_buttons=self.keylock_buttons if hasattr(self,"keylock_buttons") else {}
-  keybtn=self.button(fxrow,"KEY LOCK OFF",lambda k=key:self.toggle_keylock(k))
-  keybtn.pack(side="left",padx=2); self.keylock_buttons[key]=keybtn
-  for effect in ("filter","echo"):
-   btn=self.button(fxrow,effect.upper()+" OFF",lambda k=key,x=effect:self.toggle_effect(k,x))
-   btn.pack(side="left",padx=2)
+  fxgrid=self.frame(fxbox); fxgrid.pack(fill="x")
+  for n,effect in enumerate(("filter","echo","reverb","flanger","phaser","noise")):
+   btn=self.button(fxgrid,effect.upper()+" OFF",lambda k=key,x=effect:self.toggle_effect(k,x))
+   btn.grid(row=n//3,column=n%3,sticky="ew",padx=2,pady=2)
    self.fx_buttons[key][effect]=btn
+  for col in range(3): fxgrid.columnconfigure(col,weight=1)
+  self.keylock_buttons=self.keylock_buttons if hasattr(self,"keylock_buttons") else {}
+  keybtn=self.button(fxbox,"KEY LOCK OFF",lambda k=key:self.toggle_keylock(k))
+  keybtn.pack(anchor="w",pady=(3,0)); self.keylock_buttons[key]=keybtn
   self.button(row2,"− LOOP",lambda k=key:self.change_loop_beats(k,-1)).pack(side="left",padx=2)
   self.loop_labels=self.loop_labels if hasattr(self,"loop_labels") else {}
   loop_label=self.label(row2,"4 BEATS",font=("Segoe UI",8,"bold")); loop_label.pack(side="left",padx=3)
@@ -275,33 +278,32 @@ class DJStudio(tk.Tk):
 
  def draw_wave(self,key):
   c=THEMES[self.theme_name.get()]; cv=self.deck_ui[key]["wave"]; cv.delete("all")
-  w=max(cv.winfo_width(),420); h=max(cv.winfo_height(),104)
+  w=max(cv.winfo_width(),420); h=max(cv.winfo_height(),70)
   cv.create_rectangle(0,0,w,h,fill="#090e16",outline=c["line"])
-  values=self.deck_waveforms.get(key,[]); lane_h=(h-18)/3
-  lane_colors=("#ff4b55","#42d878","#36a9ff"); lane_names=("LOW","MID","HIGH")
+  values=self.deck_waveforms.get(key,[])
+  mid=h//2
+  cv.create_line(0,mid,w,mid,fill="#273342")
   if values:
-   for band in range(3):
-    y0=9+band*lane_h; mid=y0+lane_h/2
-    cv.create_line(0,y0+lane_h,w,y0+lane_h,fill="#263343")
-    cv.create_text(7,y0+3,text=lane_names[band],anchor="nw",fill=lane_colors[band],font=("Segoe UI",7,"bold"))
-    for x in range(0,w,3):
-     idx=min(len(values)-1,int(x/max(1,w-1)*(len(values)-1))); sample=values[idx]
-     amp=sample[band] if isinstance(sample,(list,tuple)) and len(sample)>=3 else sample
-     height=max(1,min(lane_h*0.38,amp*lane_h*0.38))
-     cv.create_line(x,mid-height,x,mid+height,fill=lane_colors[band],width=2)
+   step=max(1,len(values)//max(1,w))
+   for x in range(w):
+    idx=min(len(values)-1,int(x/max(1,w-1)*(len(values)-1)))
+    sample=values[idx]
+    if isinstance(sample,(list,tuple)) and len(sample)>=3:
+     low,medium,high=(max(0.0,min(1.0,float(v))) for v in sample[:3])
+     amp=max(low,medium,high)
+     color="#ff5968" if low>=medium and low>=high else ("#39d879" if medium>=high else "#36baff")
+    else:
+     amp=max(0.0,min(1.0,float(sample))); color="#38b8ff"
+    height=max(1,int(amp*(h*0.43)))
+    cv.create_line(x,mid-height,x,mid+height,fill=color,width=1)
   else:
-   cv.create_text(w/2,h/2,text="ANALYSING TRACK • FREQUENCY WAVEFORM",anchor="center",fill=c["muted"],font=("Segoe UI",9,"bold"))
-  duration=self.deck_duration.get(key,0.0) or 0.0; pos=0.0
-  if self.deck_started.get(key) is not None:
-   pos=self.deck_play_offset.get(key,0.0)+max(0,time.monotonic()-self.deck_started[key])
-   if self.deck_loop_active.get(key) and self.deck_loop_sound.get(key):
-    loop_len=self.deck_loop_sound[key].get_length()
-    if loop_len>0: pos=self.deck_play_offset.get(key,0.0)+(pos-self.deck_play_offset.get(key,0.0))%loop_len
+   cv.create_text(w/2,mid,text="LOAD TRACK  •  ANALYSING WAVEFORM",anchor="center",fill=c["muted"],font=("Segoe UI",8,"bold"))
+  duration=self.deck_duration.get(key,0.0) or 0.0; pos=self.current_position(key)
   if duration>0:
    for name,stamp in self.deck_cues.get(key,{}).items():
     cx=max(0,min(w,int(stamp/duration*w))); cv.create_line(cx,2,cx,h-2,fill=c["hot"],width=2)
    px=max(0,min(w,int(pos/duration*w))); cv.create_line(px,1,px,h-1,fill="#ffffff",width=2)
-  cv.create_text(w-7,4,text=key,anchor="ne",fill=c["fg"],font=("Segoe UI",8,"bold"))
+  cv.create_text(7,4,text="A" if key=="A" else "B",anchor="nw",fill="#36baff" if key=="A" else "#ff5968",font=("Segoe UI",8,"bold"))
 
  def analyse_track(self,path,key):
   if path in self.analysis_cache:
