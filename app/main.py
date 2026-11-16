@@ -181,7 +181,7 @@ class DJStudio(tk.Tk):
   bpm=self.label(p,"BPM  —",font=("Segoe UI",11,"bold")); bpm.pack(anchor="w",pady=(2,0))
   wave=tk.Canvas(p,height=104,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
   row=self.frame(p); row.pack(fill="x")
-  jog=tk.Canvas(row,width=116,height=116,bd=0,highlightthickness=0); jog.pack(side="left",padx=(0,12))
+  jog=tk.Canvas(row,width=154,height=154,bd=0,highlightthickness=0); jog.pack(side="left",padx=(0,12))
   jog.bind("<Button-1>",lambda e,k=key:self.jog_start(k,e))
   jog.bind("<B1-Motion>",lambda e,k=key:self.jog_move(k,e))
   jog.bind("<ButtonRelease-1>",lambda e,k=key:self.jog_end(k,e))
@@ -304,7 +304,7 @@ class DJStudio(tk.Tk):
    try:
     import numpy as np
     import soundfile as sf
-    from scipy.signal import resample_poly, stft, find_peaks
+    from scipy.signal import resample_poly, stft, find_peaks, correlate
     info=sf.info(path); audio,sr=sf.read(path,dtype="float32",always_2d=True)
     audio=np.mean(audio,axis=1)
     target_sr=11025
@@ -326,7 +326,7 @@ class DJStudio(tk.Tk):
     # Spectral-flux onset envelope and autocorrelation BPM estimate.
     flux=np.maximum(0.0,np.diff(spectrum,axis=1)).sum(axis=0)
     if len(flux)>8:
-     flux=flux-np.mean(flux); corr=np.correlate(flux,flux,mode="full")[len(flux)-1:]
+     flux=flux-np.mean(flux); corr=correlate(flux,flux,mode="full",method="fft")[len(flux)-1:]
      min_lag=max(1,int((60.0/190.0)*sr/hop)); max_lag=min(len(corr)-1,int((60.0/65.0)*sr/hop))
      peaks,_=find_peaks(corr[min_lag:max_lag+1])
      if len(peaks):
@@ -609,6 +609,11 @@ class DJStudio(tk.Tk):
    self.audio_engine.restore_source_audio(key)
    self.audio_engine.set_pitch(key,self.deck_pitch[key])
   self.set_status("Deck "+key+" key-lock "+("enabled" if self.keylock_enabled[key] else "disabled"))
+
+ def set_pitch_slider(self,key,value):
+  self.deck_pitch[key]=max(-8.0,min(8.0,float(value)))
+  self.apply_pitch(key)
+  self.set_status("Deck "+key+" tempo: %+.1f%%"%self.deck_pitch[key])
 
  def adjust_pitch(self,key,delta):
   self.deck_pitch[key]=max(-30.0,min(30.0,self.deck_pitch.get(key,0.0)+delta))
