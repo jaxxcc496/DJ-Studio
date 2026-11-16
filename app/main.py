@@ -125,6 +125,8 @@ class DJStudio(tk.Tk):
   self.library_panel=self.frame(self.middle,padx=12,pady=10); self.library_panel.pack(side="left",fill="both",expand=True)
   libhead=self.frame(self.library_panel); libhead.pack(fill="x")
   self.label(libhead,"MUSIC LIBRARY",font=("Segoe UI",14,"bold")).pack(side="left")
+  self.button(libhead,"ANALYZE LIBRARY",self.analyse_library).pack(side="right",padx=(5,0))
+  self.button(libhead,"ANALYZE SELECTED",self.analyse_selected).pack(side="right",padx=(5,0))
   self.button(libhead,"＋ ADD TRACKS",self.add_music).pack(side="right")
   self.search=tk.StringVar()
   self.search_entry=tk.Entry(self.library_panel,textvariable=self.search,bd=0,font=("Segoe UI",10),insertbackground="white")
@@ -137,6 +139,7 @@ class DJStudio(tk.Tk):
   self.table.configure(yscrollcommand=table_scroll.set)
   self.table.pack(side="left",fill="both",expand=True); table_scroll.pack(side="right",fill="y")
   self.table.bind("<Double-1>",lambda e:self.load_to("A"))
+  self.table.bind("<Button-3>",self.library_context_menu)
   actionrow=self.frame(self.library_panel); actionrow.pack(fill="x",pady=(8,0))
   self.button(actionrow,"LOAD → DECK A",lambda:self.load_to("A")).pack(side="left",padx=(0,5))
   self.button(actionrow,"LOAD → DECK B",lambda:self.load_to("B")).pack(side="left",padx=5)
@@ -299,27 +302,41 @@ class DJStudio(tk.Tk):
    self.apply_analysis(path,key,*self.analysis_cache[path]); return
   def worker():
    try:
-    import librosa
     import numpy as np
-    audio,sr=librosa.load(path,sr=8000,mono=True); hop=512
-    spectrum=np.abs(librosa.stft(audio,n_fft=2048,hop_length=hop))
-    frequencies=librosa.fft_frequencies(sr=sr,n_fft=2048)
+    import soundfile as sf
+    from scipy.signal import resample_poly, stft, find_peaks
+    info=sf.info(path); audio,sr=sf.read(path,dtype="float32",always_2d=True)
+    audio=np.mean(audio,axis=1)
+    target_sr=11025
+    if sr!=target_sr:
+     from math import gcd
+     g=gcd(int(sr),target_sr); audio=resample_poly(audio,target_sr//g,int(sr)//g).astype(np.float32); sr=target_sr
+    hop=256; nfft=1024
+    _,times,z=stft(audio,fs=sr,nperseg=nfft,noverlap=nfft-hop,boundary=None)
+    spectrum=np.abs(z).astype(np.float32); frequencies=np.fft.rfftfreq(nfft,1.0/sr)
     bands=[]
-    for low,high in ((20,250),(250,2500),(2500,4000)):
+    for low,high in ((25,250),(250,2500),(2500,5200)):
      mask=(frequencies>=low)&(frequencies<high)
-     energy=np.mean(spectrum[mask],axis=0) if np.any(mask) else np.zeros(spectrum.shape[1])
+     energy=np.mean(spectrum[mask],axis=0) if np.any(mask) else np.zeros(spectrum.shape[1],dtype=np.float32)
      scale=float(np.percentile(energy,98)) if len(energy) else 0.0
-     bands.append(np.clip(energy/max(scale,1e-9),0.0,1.0))
-    count=min(len(bands[0]),6000)
+     bands.append(np.clip(energy/max(scale,1e-8),0.0,1.0))
+    count=min(len(bands[0]),9000)
     indexes=np.linspace(0,len(bands[0])-1,count).astype(int) if count else []
     waveform=[(float(bands[0][i]),float(bands[1][i]),float(bands[2][i])) for i in indexes]
-    onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=hop)
-    tempo_values=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=None)
-    tempo=float(np.median(tempo_values)) if len(tempo_values) else 0.0
-    bpm=float(tempo)
-    if 70 <= bpm/2 <= 180 and bpm>180: bpm/=2.0
-    elif bpm<70 and bpm*2<=180: bpm*=2.0
-    if not 70 <= bpm <= 180: bpm=None
+    # Spectral-flux onset envelope and autocorrelation BPM estimate.
+    flux=np.maximum(0.0,np.diff(spectrum,axis=1)).sum(axis=0)
+    if len(flux)>8:
+     flux=flux-np.mean(flux); corr=np.correlate(flux,flux,mode="full")[len(flux)-1:]
+     min_lag=max(1,int((60.0/190.0)*sr/hop)); max_lag=min(len(corr)-1,int((60.0/65.0)*sr/hop))
+     peaks,_=find_peaks(corr[min_lag:max_lag+1])
+     if len(peaks):
+      lag=int(peaks[np.argmax(corr[min_lag:max_lag+1][peaks])])+min_lag
+      bpm=60.0*sr/(lag*hop)
+      if bpm<80: bpm*=2.0
+      elif bpm>170: bpm/=2.0
+      if not 65<=bpm<=190: bpm=None
+     else: bpm=None
+    else: bpm=None
     result=(waveform,bpm)
    except Exception as e:
     result=([],None); error=str(e)
@@ -413,6 +430,73 @@ class DJStudio(tk.Tk):
   for path in paths:
    if path not in self.tracks: self.tracks.append(path); self.playlists.setdefault("All Tracks",[]).append(path); count+=1
   self.refresh_tracks(); self.save_data(); self.set_status(str(count)+" tracks added")
+ def library_context_menu(self,event):
+  row=self.table.identify_row(event.y)
+  if row:
+   self.table.selection_set(row); self.table.focus(row)
+  menu=tk.Menu(self,tearoff=0)
+  menu.add_command(label="Analyse BPM + waveform",command=self.analyse_selected)
+  menu.add_command(label="Load to Deck A",command=lambda:self.load_to("A"))
+  menu.add_command(label="Load to Deck B",command=lambda:self.load_to("B"))
+  menu.add_separator()
+  menu.add_command(label="Remove from playlist / library",command=self.remove_track)
+  menu.tk_popup(event.x_root,event.y_root)
+  menu.grab_release()
+
+ def analyse_selected(self):
+  path=self.selected()
+  if not path:
+   self.set_status("Selecteer eerst een nummer in de library"); return
+  if path in self.analysis_cache:
+   self.apply_analysis(path,None,*self.analysis_cache[path]); self.set_status("Analyse al beschikbaar: "+os.path.basename(path)); return
+  self.set_status("Snelle BPM- en waveform-analyse: "+os.path.basename(path))
+  self.analyse_track(path,None)
+
+ def analyse_library(self):
+  paths=list(self.playlists.get(self.current_playlist,[]))
+  todo=[p for p in paths if p not in self.analysis_cache and os.path.isfile(p)]
+  if not todo:
+   self.set_status("Alle nummers in deze playlist zijn al geanalyseerd"); return
+  self.set_status("Analyse gestart voor "+str(len(todo))+" nummers")
+  def worker():
+   for path in todo:
+    if path in self.analysis_cache: continue
+    done=threading.Event()
+    def run_one(p=path):
+     try:
+      import numpy as np, soundfile as sf
+      from scipy.signal import resample_poly, stft, find_peaks
+      audio,sr=sf.read(p,dtype="float32",always_2d=True); audio=np.mean(audio,axis=1)
+      target=11025
+      if sr!=target:
+       from math import gcd
+       g=gcd(int(sr),target); audio=resample_poly(audio,target//g,int(sr)//g).astype(np.float32); sr=target
+      hop=256; nfft=1024
+      _,_,z=stft(audio,fs=sr,nperseg=nfft,noverlap=nfft-hop,boundary=None)
+      spec=np.abs(z).astype(np.float32); freq=np.fft.rfftfreq(nfft,1.0/sr); bands=[]
+      for lo,hi in ((25,250),(250,2500),(2500,5200)):
+       m=(freq>=lo)&(freq<hi); e=np.mean(spec[m],axis=0) if np.any(m) else np.zeros(spec.shape[1])
+       scale=float(np.percentile(e,98)) if len(e) else 0.0; bands.append(np.clip(e/max(scale,1e-8),0,1))
+      n=min(len(bands[0]),9000); ix=np.linspace(0,len(bands[0])-1,n).astype(int) if n else []
+      wave=[(float(bands[0][i]),float(bands[1][i]),float(bands[2][i])) for i in ix]
+      flux=np.maximum(0.0,np.diff(spec,axis=1)).sum(axis=0); bpm=None
+      if len(flux)>8:
+       flux-=np.mean(flux); corr=np.correlate(flux,flux,mode="full")[len(flux)-1:]
+       lo=max(1,int(60*sr/(190*hop))); hi=min(len(corr)-1,int(60*sr/(65*hop)))
+       peaks,_=find_peaks(corr[lo:hi+1])
+       if len(peaks):
+        lag=int(peaks[np.argmax(corr[lo:hi+1][peaks])])+lo; bpm=60*sr/(lag*hop)
+        if bpm<80:bpm*=2
+        elif bpm>170:bpm/=2
+        if not 65<=bpm<=190:bpm=None
+      result=(wave,bpm); self.analysis_cache[p]=result
+      self.after(0,lambda p=p,r=result:self.apply_analysis(p,None,*r))
+     except Exception as exc:
+      self.after(0,lambda p=p,e=exc:self.set_status("Analyse mislukt voor "+os.path.basename(p)+": "+str(e)[:90]))
+    run_one()
+   self.after(0,lambda:self.set_status("Analyse voltooid voor "+str(len(todo))+" nummers"))
+  threading.Thread(target=worker,daemon=True).start()
+
  def refresh_tracks(self):
   if not hasattr(self,"table"):return
   for i in self.table.get_children():self.table.delete(i)
