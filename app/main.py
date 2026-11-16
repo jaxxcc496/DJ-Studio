@@ -327,20 +327,15 @@ class DJStudio(tk.Tk):
     count=min(len(bands[0]),9000)
     indexes=np.linspace(0,len(bands[0])-1,count).astype(int) if count else []
     waveform=[(float(bands[0][i]),float(bands[1][i]),float(bands[2][i])) for i in indexes]
-    # Spectral-flux onset envelope and autocorrelation BPM estimate.
-    flux=np.maximum(0.0,np.diff(spectrum,axis=1)).sum(axis=0)
-    if len(flux)>8:
-     flux=flux-np.mean(flux); corr=correlate(flux,flux,mode="full",method="fft")[len(flux)-1:]
-     min_lag=max(1,int((60.0/190.0)*sr/hop)); max_lag=min(len(corr)-1,int((60.0/65.0)*sr/hop))
-     peaks,_=find_peaks(corr[min_lag:max_lag+1])
-     if len(peaks):
-      lag=int(peaks[np.argmax(corr[min_lag:max_lag+1][peaks])])+min_lag
-      bpm=60.0*sr/(lag*hop)
-      if bpm<80: bpm*=2.0
-      elif bpm>170: bpm/=2.0
-      if not 65<=bpm<=190: bpm=None
-     else: bpm=None
-    else: bpm=None
+    # Use librosa's beat tracker rather than choosing the tallest raw autocorrelation peak.
+    import librosa
+    onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=hop)
+    tempo=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=np.median)
+    bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
+    if bpm is not None:
+     candidates=[bpm/2.0,bpm,bpm*2.0]
+     candidates=[v for v in candidates if 65.0<=v<=190.0]
+     bpm=min(candidates,key=lambda v:abs(v-124.0)) if candidates else None
     result=(waveform,bpm)
    except Exception as e:
     result=([],None); error=str(e)
@@ -483,16 +478,13 @@ class DJStudio(tk.Tk):
        scale=float(np.percentile(e,98)) if len(e) else 0.0; bands.append(np.clip(e/max(scale,1e-8),0,1))
       n=min(len(bands[0]),9000); ix=np.linspace(0,len(bands[0])-1,n).astype(int) if n else []
       wave=[(float(bands[0][i]),float(bands[1][i]),float(bands[2][i])) for i in ix]
-      flux=np.maximum(0.0,np.diff(spec,axis=1)).sum(axis=0); bpm=None
-      if len(flux)>8:
-       flux-=np.mean(flux); corr=np.correlate(flux,flux,mode="full")[len(flux)-1:]
-       lo=max(1,int(60*sr/(190*hop))); hi=min(len(corr)-1,int(60*sr/(65*hop)))
-       peaks,_=find_peaks(corr[lo:hi+1])
-       if len(peaks):
-        lag=int(peaks[np.argmax(corr[lo:hi+1][peaks])])+lo; bpm=60*sr/(lag*hop)
-        if bpm<80:bpm*=2
-        elif bpm>170:bpm/=2
-        if not 65<=bpm<=190:bpm=None
+      import librosa
+      onset=librosa.onset.onset_strength(y=audio,sr=sr,hop_length=hop)
+      tempo=librosa.feature.tempo(onset_envelope=onset,sr=sr,hop_length=hop,aggregate=np.median)
+      bpm=float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else None
+      if bpm is not None:
+       candidates=[v for v in (bpm/2.0,bpm,bpm*2.0) if 65.0<=v<=190.0]
+       bpm=min(candidates,key=lambda v:abs(v-124.0)) if candidates else None
       result=(wave,bpm); self.analysis_cache[p]=result
       self.after(0,lambda p=p,r=result:self.apply_analysis(p,None,*r))
      except Exception as exc:
