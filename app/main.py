@@ -82,30 +82,35 @@ class DJStudio(tk.Tk):
   self.settings_btn=self.button(self.top,"SETTINGS",self.open_settings); self.settings_btn.pack(side="right",padx=(8,2))
   self.theme_label=self.label(self.top,text="THEME",font=("Segoe UI",8,"bold")); self.theme_label.pack(side="right",padx=6)
 
-  self.rhythm_wave=tk.Canvas(self,height=132,bd=0,highlightthickness=0)
+  self.rhythm_wave=tk.Canvas(self,height=170,bd=0,highlightthickness=0)
   self.rhythm_wave.pack(fill="x",pady=(0,8))
   self.deck_row=self.frame(self); self.deck_row.pack(fill="x",pady=(0,9))
   self.deck_ui={}
-  for key in ("A","B"): self.build_deck(self.deck_row,key)
-  self.beatmatch_label=self.label(self,"BEATMATCH  •  Load tracks in both decks to compare BPM",font=("Segoe UI",10,"bold"),anchor="center")
-  self.beatmatch_label.pack(fill="x",pady=(0,8))
-
-  self.mixer_panel=self.frame(self,padx=12,pady=9); self.mixer_panel.pack(fill="x",pady=(0,9))
+  self.deck_ui={}
+  self.deck_a_panel=self.frame(self.deck_row); self.deck_a_panel.pack(side="left",fill="both",expand=True)
+  self.build_deck(self.deck_a_panel,"A")
+    self.mixer_panel=self.frame(self.deck_row,padx=8,pady=8); self.mixer_panel.pack(side="left",fill="y",padx=4)
   self.label(self.mixer_panel,"MIXER  •  AUDIO LEVELS",font=("Segoe UI",10,"bold")).pack(anchor="w")
-  controls=self.frame(self.mixer_panel); controls.pack(fill="x",pady=(5,0))
+  controls=self.frame(self.mixer_panel); controls.pack(fill="both",expand=True,pady=(5,0))
   self.eq_controls={}
   for name in ("GAIN A","LOW A","MID A","HIGH A","CROSSFADER","HIGH B","MID B","LOW B","GAIN B"):
-   col=self.frame(controls); col.pack(side="left",expand=True,fill="x",padx=3)
+   col=self.frame(controls); col.pack(side="top",expand=True,fill="x",pady=1)
    self.label(col,name,font=("Segoe UI",7,"bold")).pack()
    if name=="GAIN A":
-    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
+    sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=48,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="A":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
    elif name=="GAIN B":
     sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,k="B":self.set_deck_gain(k,v)); sc.set(100); sc.pack()
    elif name=="CROSSFADER":
-    sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=160,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(0); sc.pack()
+    sc=tk.Scale(col,from_=-100,to=100,orient="horizontal",length=112,showvalue=False,bd=0,highlightthickness=0,command=self.set_crossfade); sc.set(0); sc.pack()
    else:
     sc=tk.Scale(col,from_=100,to=0,orient="vertical",length=78,showvalue=False,bd=0,highlightthickness=0,command=lambda v,n=name:self.set_eq_control(n,v)); sc.set(50); sc.pack()
     self.eq_controls[name]=sc
+
+  self.deck_b_panel=self.frame(self.deck_row); self.deck_b_panel.pack(side="left",fill="both",expand=True)
+  self.build_deck(self.deck_b_panel,"B")
+  self.beatmatch_label=self.label(self,"BEATMATCH  •  Load tracks in both decks to compare BPM",font=("Segoe UI",10,"bold"),anchor="center")
+  self.beatmatch_label.pack(fill="x",pady=(0,8))
+
   self.middle=self.frame(self); self.middle.pack(fill="both",expand=True)
   self.sidebar=self.frame(self.middle,width=205,padx=10,pady=10); self.sidebar.pack(side="left",fill="y",padx=(0,8)); self.sidebar.pack_propagate(False)
   self.label(self.sidebar,"COLLECTION",font=("Segoe UI",11,"bold")).pack(anchor="w",pady=(2,10))
@@ -145,7 +150,6 @@ class DJStudio(tk.Tk):
   self.button(actionrow,"LOAD → DECK B",lambda:self.load_to("B")).pack(side="left",padx=5)
   self.button(actionrow,"＋ QUEUE",self.add_to_queue).pack(side="left",padx=5)
   self.button(actionrow,"＋ PLAYLIST",self.add_to_playlist).pack(side="left",padx=5)
-  self.button(actionrow,"REMOVE",self.remove_track).pack(side="left",padx=5)
 
   self.bottom=self.frame(self); self.bottom.pack(fill="x",pady=(9,0))
   self.sampler_panel=self.frame(self.bottom,width=290,padx=10,pady=9); self.sampler_panel.pack(side="right",fill="y"); self.sampler_panel.pack_propagate(False)
@@ -169,7 +173,7 @@ class DJStudio(tk.Tk):
   self.button(self.sampler_panel,"STOP ALL SAMPLES",self.audio_engine.stop_all_samples).pack(fill="x",pady=(4,0))
   self.statusbar=tk.Label(self,textvariable=self.status,font=("Segoe UI",8),anchor="w",padx=10,pady=7,bd=0); self.statusbar.pack(fill="x",pady=(8,0))
   self.refresh_playlists(); self.refresh_tracks(); self.refresh_queue()
-  self.after(50,self.update_deck_displays)
+  self.after(80,self.update_deck_displays)
 
  def build_deck(self,parent,key):
   p=self.frame(parent,padx=12,pady=10); p.pack(side="left",fill="both",expand=True,padx=4)
@@ -179,7 +183,7 @@ class DJStudio(tk.Tk):
   title=self.label(p,"No track loaded",font=("Segoe UI",11,"bold"),anchor="w"); title.pack(fill="x",pady=(8,0))
   time=self.label(p,"00:00 / 00:00  •  LEFT 00:00",font=("Segoe UI",10,"bold")); time.pack(anchor="w")
   bpm=self.label(p,"BPM  —",font=("Segoe UI",11,"bold")); bpm.pack(anchor="w",pady=(2,0))
-  wave=tk.Canvas(p,height=104,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
+  wave=tk.Canvas(p,height=126,bd=0,highlightthickness=0); wave.pack(fill="x",pady=(4,6))
   row=self.frame(p); row.pack(fill="x")
   jog=tk.Canvas(row,width=154,height=154,bd=0,highlightthickness=0); jog.pack(side="left",padx=(0,12))
   jog.bind("<Button-1>",lambda e,k=key:self.jog_start(k,e))
@@ -278,7 +282,7 @@ class DJStudio(tk.Tk):
     y0=9+band*lane_h; mid=y0+lane_h/2
     cv.create_line(0,y0+lane_h,w,y0+lane_h,fill="#263343")
     cv.create_text(7,y0+3,text=lane_names[band],anchor="nw",fill=lane_colors[band],font=("Segoe UI",7,"bold"))
-    for x in range(0,w,2):
+    for x in range(0,w,3):
      idx=min(len(values)-1,int(x/max(1,w-1)*(len(values)-1))); sample=values[idx]
      amp=sample[band] if isinstance(sample,(list,tuple)) and len(sample)>=3 else sample
      height=max(1,min(lane_h*0.38,amp*lane_h*0.38))
