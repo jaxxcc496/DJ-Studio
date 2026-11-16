@@ -89,7 +89,7 @@ class DJStudio(tk.Tk):
   self.deck_ui={}
   self.deck_a_panel=self.frame(self.deck_row); self.deck_a_panel.pack(side="left",fill="both",expand=True)
   self.build_deck(self.deck_a_panel,"A")
-    self.mixer_panel=self.frame(self.deck_row,padx=8,pady=8); self.mixer_panel.pack(side="left",fill="y",padx=4)
+  self.mixer_panel=self.frame(self.deck_row,padx=8,pady=8); self.mixer_panel.pack(side="left",fill="y",padx=4)
   self.label(self.mixer_panel,"MIXER  •  AUDIO LEVELS",font=("Segoe UI",10,"bold")).pack(anchor="w")
   controls=self.frame(self.mixer_panel); controls.pack(fill="both",expand=True,pady=(5,0))
   self.eq_controls={}
